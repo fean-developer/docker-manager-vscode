@@ -22,10 +22,25 @@
   ],
   "icon": "resources/icon.png",
   "activationEvents": [
+    "onStartupFinished",
     "onView:dockerManager.containers",
     "onView:dockerManager.images",
     "onView:dockerManager.volumes",
-    "onView:dockerManager.networks"
+    "onView:dockerManager.networks",
+    "onCommand:dockerManager.refresh",
+    "onCommand:dockerManager.startContainer",
+    "onCommand:dockerManager.stopContainer",
+    "onCommand:dockerManager.restartContainer",
+    "onCommand:dockerManager.removeContainer",
+    "onCommand:dockerManager.showContainerLogs",
+    "onCommand:dockerManager.execShell",
+    "onCommand:dockerManager.inspectContainer",
+    "onCommand:dockerManager.removeImage",
+    "onCommand:dockerManager.pruneImages",
+    "onCommand:dockerManager.removeVolume",
+    "onCommand:dockerManager.pruneVolumes",
+    "onCommand:dockerManager.openDashboard",
+    "onCommand:dockerManager.openContainerList"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -252,8 +267,11 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
+    "vscode:prepublish": "npm run bundle -- --production",
     "compile": "tsc -p ./",
+    "bundle": "node esbuild.js",
+    "bundle:watch": "node esbuild.js --watch",
+    "deploy:local": "node esbuild.js && cp out/extension.js ~/.vscode-server/extensions/docker-manager.vscode-docker-manager-0.1.0/out/extension.js",
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile",
     "lint": "eslint src --ext ts",
@@ -268,6 +286,7 @@
     "@typescript-eslint/eslint-plugin": "^7.0.0",
     "@typescript-eslint/parser": "^7.0.0",
     "@vscode/test-electron": "^2.3.0",
+    "esbuild": "^0.28.0",
     "eslint": "^8.57.0",
     "glob": "^13.0.6",
     "mocha": "^11.3.0",

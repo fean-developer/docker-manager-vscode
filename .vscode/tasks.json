@@ -4,14 +4,14 @@
     {
       "label": "compile",
       "type": "shell",
-      "command": "source ~/.nvm/nvm.sh && npm run compile",
+      "command": "source ~/.nvm/nvm.sh && npm run bundle",
       "options": {
         "shell": {
           "executable": "/bin/bash",
           "args": ["-c"]
         }
       },
-      "problemMatcher": "$tsc",
+      "problemMatcher": "$esbuild-watch",
       "presentation": {
         "reveal": "silent",
         "panel": "shared"

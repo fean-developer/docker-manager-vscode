@@ -2,7 +2,7 @@
   "name": "fean-container-manager",
   "displayName": "Container Manager",
   "description": "Gerencie containers, imagens, volumes e redes Docker diretamente no VS Code.",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "publisher": "fean-developer",
   "repository": {
     "type": "git",

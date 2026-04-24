@@ -1,8 +1,8 @@
 # Container Manager — Extensão VS Code
 
-[![Visual Studio Marketplace](https://img.shields.io/visual-studio-marketplace/v/fean-developer.fean-container-manager?style=flat-square&label=Visual%20Studio%20Marketplace)](https://marketplace.visualstudio.com/items?itemName=fean-developer.fean-container-manager)
-[![Release](https://img.shields.io/badge/release-v0.1.3-blue?style=flat-square)](https://github.com/fean-developer/docker-manager-vscode/releases/tag/v0.1.3)
-[![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
+[![Visual Studio Marketplace Version](https://img.shields.io/visual-studio-marketplace/v/fean-developer.fean-container-manager?style=flat-square&label=Visual%20Studio%20Marketplace)](https://vsmarketplacebadges.dev/version/fean-developer.fean-container-manager.svg)
+[![Release](https://img.shields.io/github/v/release/fean-developer/docker-manager-vscode?style=flat-square&label=release)](https://flat.badgen.net/github/release/fean-developer/fean-container-manager)
+[![License](https://img.shields.io/github/license/fean-developer/docker-manager-vscode?style=flat-square)](LICENSE)
 
 Gerencie containers, imagens, volumes e redes Docker diretamente na sua IDE, sem precisar sair do VS Code.
 

@@ -240,14 +240,16 @@ export function registrarComandos(
                         const info = await containerSvc.inspecionar(id);
                         const nome = (info.Name ?? id).replace(/^\//, '');
                         const { DockerTreeItem } = await import('../views/dockerTreeItem');
+                        const estado = (info.State?.Status ?? 'unknown') as 'running' | 'exited' | 'paused' | 'restarting' | 'created' | 'dead' | 'removing';
                         const item = new DockerTreeItem({
                             label: nome,
                             nodeType: 'container-running',
                             resourceId: id,
                             containerData: {
+                                id,
                                 nome,
                                 imagem: info.Config?.Image ?? '-',
-                                estado: info.State?.Status ?? 'unknown',
+                                estado,
                                 status: info.State?.Status ?? '-',
                                 portas: [],
                                 criado: new Date(info.Created),
@@ -290,6 +292,33 @@ export function registrarComandos(
                     }
                 },
             );
+        }),
+    );
+
+    // ── Lista de Imagens (com checkboxes e remoção em lote) ────────────────────
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('dockerManager.openImageList', async () => {
+            const { ImageListPanel } = await import('../webviews/imageListPanel');
+            ImageListPanel.criar(context.extensionUri);
+        }),
+    );
+
+    // ── Lista de Volumes (com checkboxes e remoção em lote) ────────────────────
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('dockerManager.openVolumeList', async () => {
+            const { VolumeListPanel } = await import('../webviews/volumeListPanel');
+            VolumeListPanel.criar(context.extensionUri);
+        }),
+    );
+
+    // ── Lista de Redes (com checkboxes e remoção em lote) ──────────────────────
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('dockerManager.openNetworkList', async () => {
+            const { NetworkListPanel } = await import('../webviews/networkListPanel');
+            NetworkListPanel.criar(context.extensionUri);
         }),
     );
 }

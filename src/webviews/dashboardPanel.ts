@@ -61,6 +61,14 @@ export class DashboardPanel {
         this._panel.webview.onDidReceiveMessage(async (msg: { command: string }) => {
             if (msg.command === 'carregar') {
                 await this._enviarDados();
+            } else if (msg.command === 'abrirContainers') {
+                await vscode.commands.executeCommand('dockerManager.openContainerList');
+            } else if (msg.command === 'abrirImagens') {
+                await vscode.commands.executeCommand('dockerManager.openImageList');
+            } else if (msg.command === 'abrirVolumes') {
+                await vscode.commands.executeCommand('dockerManager.openVolumeList');
+            } else if (msg.command === 'abrirRedes') {
+                await vscode.commands.executeCommand('dockerManager.openNetworkList');
             }
         }, null, this._disposables);
     }
@@ -243,7 +251,7 @@ export class DashboardPanel {
     </div>
 
     <div id="cards-wrap" class="cards-grid" style="display:none">
-        <div class="card" id="card-containers">
+        <div class="card" id="card-containers" title="Abrir lista de containers">
             <div class="card-icon">&#128230;</div>
             <div class="card-body">
                 <div class="card-numero" id="cnt-total">-</div>
@@ -251,7 +259,7 @@ export class DashboardPanel {
                 <div class="card-detalhe" id="cnt-detalhe"></div>
             </div>
         </div>
-        <div class="card" id="card-imagens">
+        <div class="card" id="card-imagens" title="Abrir lista de imagens">
             <div class="card-icon">&#128190;</div>
             <div class="card-body">
                 <div class="card-numero" id="img-total">-</div>
@@ -259,14 +267,14 @@ export class DashboardPanel {
                 <div class="card-detalhe" id="img-detalhe"></div>
             </div>
         </div>
-        <div class="card" id="card-volumes">
+        <div class="card" id="card-volumes" title="Abrir lista de volumes">
             <div class="card-icon">&#128452;</div>
             <div class="card-body">
                 <div class="card-numero" id="vol-total">-</div>
                 <div class="card-titulo">Volumes</div>
             </div>
         </div>
-        <div class="card" id="card-redes">
+        <div class="card" id="card-redes" title="Abrir lista de redes">
             <div class="card-icon">&#128279;</div>
             <div class="card-body">
                 <div class="card-numero" id="net-total">-</div>
@@ -284,6 +292,12 @@ export class DashboardPanel {
         document.getElementById('btn-refresh').addEventListener('click', function() {
             carregar();
         });
+
+        // Registrar navegação nos cards
+        document.getElementById('card-containers').addEventListener('click', () => vscode.postMessage({ command: 'abrirContainers' }));
+        document.getElementById('card-imagens').addEventListener('click', () => vscode.postMessage({ command: 'abrirImagens' }));
+        document.getElementById('card-volumes').addEventListener('click', () => vscode.postMessage({ command: 'abrirVolumes' }));
+        document.getElementById('card-redes').addEventListener('click', () => vscode.postMessage({ command: 'abrirRedes' }));
 
         function carregar() {
             document.getElementById('status-carregando').style.display = '';

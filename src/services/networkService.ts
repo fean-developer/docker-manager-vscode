@@ -56,6 +56,18 @@ export class NetworkService {
         }
     }
 
+    /**
+     * Remove uma rede Docker pelo ID.
+     */
+    public async remover(id: string): Promise<void> {
+        try {
+            const rede = this.docker.getNetwork(id);
+            await rede.remove();
+        } catch (err) {
+            throw new Error(`Erro ao remover rede: ${interpretarErrodocker(err)}`);
+        }
+    }
+
     private mapearNetworkInfo(r: Dockerode.NetworkInspectInfo): NetworkInfo {
         const config = r.IPAM?.Config?.[0];
         const containers = r.Containers ? Object.keys(r.Containers).length : 0;

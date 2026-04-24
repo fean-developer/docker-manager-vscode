@@ -18,6 +18,9 @@ esbuild.build({
     format: 'cjs',
     platform: 'node',
     target: 'node18',
+    loader: {
+        '.ts': 'ts',  // ← CRÍTICO: Compilar TypeScript!
+    },
     sourcemap: !producao,
     minify: producao,
     logLevel: 'info',

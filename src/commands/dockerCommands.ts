@@ -6,7 +6,7 @@ import { DockerTreeItem } from '../views/dockerTreeItem';
 import { formatarBytes } from '../services/imageService';
 
 /**
- * Registra todos os comandos da extensão Docker Manager.
+ * Registra todos os comandos da extensão Container Manager.
  * Todos os comandos destrutivos exigem confirmação do usuário.
  */
 export function registrarComandos(

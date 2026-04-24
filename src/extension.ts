@@ -4,14 +4,14 @@ import { registrarComandos } from './commands/dockerCommands';
 import { DockerClient } from './docker/dockerClient';
 
 /**
- * Ponto de entrada da extensão Docker Manager.
+ * Ponto de entrada da extensão Container Manager.
  *
  * SEGURANÇA: O acesso ao socket Docker é equivalente a acesso root.
  * A extensão não expõe o socket, não abre servidores HTTP e não loga dados sensíveis.
  */
 export function activate(context: vscode.ExtensionContext): void {
     try {
-        console.log('Docker Manager: extensão ativada.');
+        console.log('Container Manager: extensão ativada.');
 
         // Cria uma instância de provider para cada view (cada uma com seu tipo específico)
         const containerProvider = new DockerTreeProvider('containers');
@@ -34,9 +34,9 @@ export function activate(context: vscode.ExtensionContext): void {
                     showCollapseAll: true,
                 });
                 context.subscriptions.push(treeView);
-                console.log(`Docker Manager: TreeView registrada para ${viewId}`);
+                console.log(`Container Manager: TreeView registrada para ${viewId}`);
             } catch (err) {
-                console.error(`Docker Manager: Erro ao criar TreeView para ${viewId}:`, err);
+                console.error(`Container Manager: Erro ao criar TreeView para ${viewId}:`, err);
                 throw err;
             }
         }
@@ -50,9 +50,9 @@ export function activate(context: vscode.ExtensionContext): void {
                 volumeProvider.refresh();
                 networkProvider.refresh();
             });
-            console.log('Docker Manager: Comandos registrados');
+            console.log('Container Manager: Comandos registrados');
         } catch (err) {
-            console.error('Docker Manager: Erro ao registrar comandos:', err);
+            console.error('Container Manager: Erro ao registrar comandos:', err);
             throw err;
         }
 
@@ -71,9 +71,9 @@ export function activate(context: vscode.ExtensionContext): void {
                     networkProvider.pararPolling();
                 },
             });
-            console.log('Docker Manager: Polling iniciado');
+            console.log('Container Manager: Polling iniciado');
         } catch (err) {
-            console.error('Docker Manager: Erro ao iniciar polling:', err);
+            console.error('Container Manager: Erro ao iniciar polling:', err);
             // Não quebra a ativação se o polling falhar
         }
 
@@ -83,25 +83,25 @@ export function activate(context: vscode.ExtensionContext): void {
                 .verificarConexao()
                 .then(async () => {
                     const versao = await DockerClient.getInstance().obterVersao();
-                    console.log(`Docker Manager: conectado ao Docker ${versao.Version}.`);
+                    console.log(`Container Manager: conectado ao Docker ${versao.Version}.`);
                 })
                 .catch(err => {
                     const msg = err instanceof Error ? err.message : String(err);
-                    console.error(`Docker Manager: Erro de conexão com Docker: ${msg}`);
+                    console.error(`Container Manager: Erro de conexão com Docker: ${msg}`);
                     vscode.window.showWarningMessage(
-                        `Docker Manager: ${msg}`,
+                        `Container Manager: ${msg}`,
                     );
                 });
         } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
-            console.error(`Docker Manager: Erro ao instanciar DockerClient: ${msg}`);
+            console.error(`Container Manager: Erro ao instanciar DockerClient: ${msg}`);
             // Não quebra a ativação se DockerClient falhar
         }
     } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        console.error('Docker Manager: ERRO CRÍTICO NA ATIVAÇÃO:', msg);
+        console.error('Container Manager: ERRO CRÍTICO NA ATIVAÇÃO:', msg);
         vscode.window.showErrorMessage(
-            `Docker Manager: Erro crítico na inicialização: ${msg}`,
+            `Container Manager: Erro crítico na inicialização: ${msg}`,
         );
     }
 }
@@ -111,5 +111,5 @@ export function activate(context: vscode.ExtensionContext): void {
  * Libera recursos e para processos em background.
  */
 export function deactivate(): void {
-    console.log('Docker Manager: extensão desativada.');
+    console.log('Container Manager: extensão desativada.');
 }

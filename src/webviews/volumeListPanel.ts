@@ -43,7 +43,7 @@ export class VolumeListPanel {
 
         const panel = vscode.window.createWebviewPanel(
             VolumeListPanel.VIEW_TYPE,
-            'Docker Manager — Volumes',
+            'Container Manager — Volumes',
             vscode.ViewColumn.One,
             {
                 enableScripts: true,

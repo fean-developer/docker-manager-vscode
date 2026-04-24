@@ -1,6 +1,6 @@
 # Container Manager — Extensão VS Code
 
-[![Visual Studio Marketplace Version](https://img.shields.io/visual-studio-marketplace/v/fean-developer.fean-container-manager?style=flat-square&label=Visual%20Studio%20Marketplace)](https://vsmarketplacebadges.dev/version/fean-developer.fean-container-manager.svg)
+[![Visual Studio Marketplace Version](https://vsmarketplacebadges.dev/version/fean-developer.fean-container-manager.svg)](https://img.shields.io/visual-studio-marketplace/v/fean-developer.fean-container-manager?style=flat-square&label=Visual%20Studio%20Marketplace)
 [![Release](https://img.shields.io/github/v/release/fean-developer/docker-manager-vscode?style=flat-square&label=release)](https://flat.badgen.net/github/release/fean-developer/fean-container-manager)
 [![License](https://img.shields.io/github/license/fean-developer/docker-manager-vscode?style=flat-square)](LICENSE)
 
@@ -25,6 +25,19 @@ Gerencie containers, imagens, volumes e redes Docker diretamente na sua IDE, sem
 - **Remoção em lote** de imagens e volumes com confirmação obrigatória
 
 ---
+
+## Pré-requisitos
+
+- VS Code 1.85 ou superior
+- Docker Engine instalado e em execução na máquina local
+- Usuário com acesso ao socket Docker (`/var/run/docker.sock` no Linux/macOS)
+
+### Linux — Conceder acesso ao socket Docker sem sudo
+
+```bash
+sudo usermod -aG docker $USER
+# Faça logout e login novamente para aplicar
+```
 
 ## Como usar
 
@@ -152,34 +165,18 @@ npm run watch
 ```
 ---
 
-## Pré-requisitos
-
-- VS Code 1.85 ou superior
-- Docker Engine instalado e em execução na máquina local
-- Usuário com acesso ao socket Docker (`/var/run/docker.sock` no Linux/macOS)
-
-### Linux — Conceder acesso ao socket Docker sem sudo
-
-```bash
-sudo usermod -aG docker $USER
-# Faça logout e login novamente para aplicar
-```
-
----
-
 ## Instalação
 
 1. Abra o VS Code
 2. Vá em Extensions (`Ctrl+Shift+X`)
-3. Busque por **Docker Manager**
+3. Busque por **Container Manager**
 4. Clique em **Install**
 
 Ou instale manualmente o `.vsix`:
 
 ```bash
-code --install-extension vscode-docker-manager-0.1.0.vsix
+code --install-extension vscode-docker-manager-{yourVersion}.vsix
 ```
-
 ---
 
 ## Licença

@@ -38,7 +38,7 @@ export class NetworkListPanel {
 
         const panel = vscode.window.createWebviewPanel(
             NetworkListPanel.VIEW_TYPE,
-            'Docker Manager — Redes',
+            'Container Manager — Redes',
             vscode.ViewColumn.One,
             {
                 enableScripts: true,

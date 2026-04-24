@@ -85,7 +85,7 @@ export class DockerTreeProvider implements vscode.TreeDataProvider<DockerTreeIte
             await DockerClient.getInstance().verificarConexao();
         } catch (err) {
             const msg = err instanceof DockerConnectionError ? err.message : String(err);
-            vscode.window.showErrorMessage(`Docker Manager: ${msg}`);
+            vscode.window.showErrorMessage(`Container Manager: ${msg}`);
             return [];
         }
 
@@ -122,7 +122,7 @@ export class DockerTreeProvider implements vscode.TreeDataProvider<DockerTreeIte
                 });
             });
         } catch (err) {
-            vscode.window.showErrorMessage(`Docker Manager (containers): ${err instanceof Error ? err.message : String(err)}`);
+            vscode.window.showErrorMessage(`Container Manager (containers): ${err instanceof Error ? err.message : String(err)}`);
             this.items = [];
         }
     }
@@ -142,7 +142,7 @@ export class DockerTreeProvider implements vscode.TreeDataProvider<DockerTreeIte
                 });
             });
         } catch (err) {
-            vscode.window.showErrorMessage(`Docker Manager (imagens): ${err instanceof Error ? err.message : String(err)}`);
+            vscode.window.showErrorMessage(`Container Manager (imagens): ${err instanceof Error ? err.message : String(err)}`);
             this.items = [];
         }
     }
@@ -159,7 +159,7 @@ export class DockerTreeProvider implements vscode.TreeDataProvider<DockerTreeIte
                 volumeData: v,
             }));
         } catch (err) {
-            vscode.window.showErrorMessage(`Docker Manager (volumes): ${err instanceof Error ? err.message : String(err)}`);
+            vscode.window.showErrorMessage(`Container Manager (volumes): ${err instanceof Error ? err.message : String(err)}`);
             this.items = [];
         }
     }
@@ -176,7 +176,7 @@ export class DockerTreeProvider implements vscode.TreeDataProvider<DockerTreeIte
                 networkData: r,
             }));
         } catch (err) {
-            vscode.window.showErrorMessage(`Docker Manager (redes): ${err instanceof Error ? err.message : String(err)}`);
+            vscode.window.showErrorMessage(`Container Manager (redes): ${err instanceof Error ? err.message : String(err)}`);
             this.items = [];
         }
     }

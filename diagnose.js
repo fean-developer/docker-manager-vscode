@@ -62,7 +62,7 @@ try {
         console.log('   1. Abra o VS Code');
         console.log('   2. Pressione Ctrl+Shift+J (console)');
         console.log('   3. Procure por mensagens de erro');
-        console.log('   4. Verifique se há "Docker Manager: extensão ativada"\n');
+        console.log('   4. Verifique se há "Container Manager: extensão ativada"\n');
         
         process.exit(0);
     }).catch(err => {

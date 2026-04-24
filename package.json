@@ -1,9 +1,9 @@
 {
-  "name": "vscode-docker-manager",
-  "displayName": "Docker Manager",
+  "name": "fean-container-manager",
+  "displayName": "Container Manager",
   "description": "Gerencie containers, imagens, volumes e redes Docker diretamente no VS Code.",
-  "version": "0.1.0",
-  "publisher": "docker-manager",
+  "version": "0.1.3",
+  "publisher": "fean-developer",
   "repository": {
     "type": "git",
     "url": "https://github.com/fean-developer/docker-manager-vscode.git"
@@ -22,10 +22,28 @@
   ],
   "icon": "resources/icon.png",
   "activationEvents": [
+    "onStartupFinished",
     "onView:dockerManager.containers",
     "onView:dockerManager.images",
     "onView:dockerManager.volumes",
-    "onView:dockerManager.networks"
+    "onView:dockerManager.networks",
+    "onCommand:dockerManager.refresh",
+    "onCommand:dockerManager.startContainer",
+    "onCommand:dockerManager.stopContainer",
+    "onCommand:dockerManager.restartContainer",
+    "onCommand:dockerManager.removeContainer",
+    "onCommand:dockerManager.showContainerLogs",
+    "onCommand:dockerManager.execShell",
+    "onCommand:dockerManager.inspectContainer",
+    "onCommand:dockerManager.removeImage",
+    "onCommand:dockerManager.pruneImages",
+    "onCommand:dockerManager.removeVolume",
+    "onCommand:dockerManager.pruneVolumes",
+    "onCommand:dockerManager.openDashboard",
+    "onCommand:dockerManager.openContainerList",
+    "onCommand:dockerManager.openImageList",
+    "onCommand:dockerManager.openVolumeList",
+    "onCommand:dockerManager.openNetworkList"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -142,6 +160,24 @@
         "title": "Lista de Containers",
         "icon": "$(list-unordered)",
         "category": "Docker Manager"
+      },
+      {
+        "command": "dockerManager.openImageList",
+        "title": "Lista de Imagens",
+        "icon": "$(package)",
+        "category": "Docker Manager"
+      },
+      {
+        "command": "dockerManager.openVolumeList",
+        "title": "Lista de Volumes",
+        "icon": "$(database)",
+        "category": "Docker Manager"
+      },
+      {
+        "command": "dockerManager.openNetworkList",
+        "title": "Lista de Redes",
+        "icon": "$(plug)",
+        "category": "Docker Manager"
       }
     ],
     "menus": {
@@ -154,6 +190,21 @@
         {
           "command": "dockerManager.openContainerList",
           "when": "view == dockerManager.containers",
+          "group": "navigation@2"
+        },
+        {
+          "command": "dockerManager.openImageList",
+          "when": "view == dockerManager.images",
+          "group": "navigation@2"
+        },
+        {
+          "command": "dockerManager.openVolumeList",
+          "when": "view == dockerManager.volumes",
+          "group": "navigation@2"
+        },
+        {
+          "command": "dockerManager.openNetworkList",
+          "when": "view == dockerManager.networks",
           "group": "navigation@2"
         },
         {
@@ -252,8 +303,12 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
+    "vscode:prepublish": "npm run bundle -- --production",
+    "vscode:release": "rm -rf out/ vscode-docker-manager-*.vsix && npm run vscode:prepublish && vsce package",
     "compile": "tsc -p ./",
+    "bundle": "node esbuild.js",
+    "bundle:watch": "node esbuild.js --watch",
+    "deploy:local": "npm run bundle && cp out/extension.js ~/.vscode-server/extensions/docker-manager.vscode-docker-manager-0.1.2/out/extension.js && cp out/extension.js.map ~/.vscode-server/extensions/docker-manager.vscode-docker-manager-0.1.2/out/extension.js.map",
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile",
     "lint": "eslint src --ext ts",
@@ -268,6 +323,7 @@
     "@typescript-eslint/eslint-plugin": "^7.0.0",
     "@typescript-eslint/parser": "^7.0.0",
     "@vscode/test-electron": "^2.3.0",
+    "esbuild": "^0.28.0",
     "eslint": "^8.57.0",
     "glob": "^13.0.6",
     "mocha": "^11.3.0",

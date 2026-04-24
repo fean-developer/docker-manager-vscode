@@ -6,9 +6,11 @@ import { VolumeService } from '../services/volumeService';
 import { NetworkService } from '../services/networkService';
 import { DockerClient, DockerConnectionError } from '../docker/dockerClient';
 
+export type DockerViewType = 'containers' | 'images' | 'volumes' | 'networks';
+
 /**
- * Provider da árvore Docker.
- * Implementa grupos: Containers, Imagens, Volumes, Redes.
+ * Provider da árvore Docker (filtrado por tipo).
+ * Cada instância mostra apenas um tipo: containers, imagens, volumes ou redes.
  * Suporta refresh manual e automático via polling.
  */
 export class DockerTreeProvider implements vscode.TreeDataProvider<DockerTreeItem> {
@@ -20,16 +22,15 @@ export class DockerTreeProvider implements vscode.TreeDataProvider<DockerTreeIte
     private readonly volumeService: VolumeService;
     private readonly networkService: NetworkService;
 
-    // Cache dos dados para montar sub-itens sem re-fetch
-    private containers: DockerTreeItem[] = [];
-    private imagens: DockerTreeItem[] = [];
-    private volumes: DockerTreeItem[] = [];
-    private redes: DockerTreeItem[] = [];
+    // Cache dos dados do tipo específico
+    private items: DockerTreeItem[] = [];
 
     private pollingTimer: NodeJS.Timeout | undefined;
     private readonly POLLING_INTERVALO_MS = 10_000;
+    private readonly viewType: DockerViewType;
 
-    constructor() {
+    constructor(viewType: DockerViewType) {
+        this.viewType = viewType;
         this.containerService = new ContainerService();
         this.imageService = new ImageService();
         this.volumeService = new VolumeService();
@@ -67,25 +68,19 @@ export class DockerTreeProvider implements vscode.TreeDataProvider<DockerTreeIte
     }
 
     public async getChildren(element?: DockerTreeItem): Promise<DockerTreeItem[]> {
-        // Raiz: verifica conexão e retorna grupos
+        // Sem elemento = carrega os dados do tipo específico
         if (!element) {
-            return this.carregarGrupos();
+            return this.carregarDados();
         }
 
-        // Sub-itens dos grupos
-        switch (element.nodeType) {
-            case 'group-containers': return this.containers;
-            case 'group-images':     return this.imagens;
-            case 'group-volumes':    return this.volumes;
-            case 'group-networks':   return this.redes;
-            default:                 return [];
-        }
+        // Nós não têm filhos (são folhas)
+        return [];
     }
 
     /**
-     * Carrega todos os grupos em paralelo e retorna os nós raiz.
+     * Carrega dados específicos do tipo da view.
      */
-    private async carregarGrupos(): Promise<DockerTreeItem[]> {
+    private async carregarDados(): Promise<DockerTreeItem[]> {
         try {
             await DockerClient.getInstance().verificarConexao();
         } catch (err) {
@@ -94,45 +89,28 @@ export class DockerTreeProvider implements vscode.TreeDataProvider<DockerTreeIte
             return [];
         }
 
-        await Promise.all([
-            this.carregarContainers(),
-            this.carregarImagens(),
-            this.carregarVolumes(),
-            this.carregarRedes(),
-        ]);
+        switch (this.viewType) {
+            case 'containers':
+                await this.carregarContainers();
+                break;
+            case 'images':
+                await this.carregarImagens();
+                break;
+            case 'volumes':
+                await this.carregarVolumes();
+                break;
+            case 'networks':
+                await this.carregarRedes();
+                break;
+        }
 
-        return [
-            new DockerTreeItem({
-                label: `Containers (${this.containers.length})`,
-                nodeType: 'group-containers',
-                resourceId: 'group-containers',
-                collapsible: vscode.TreeItemCollapsibleState.Expanded,
-            }),
-            new DockerTreeItem({
-                label: `Imagens (${this.imagens.length})`,
-                nodeType: 'group-images',
-                resourceId: 'group-images',
-                collapsible: vscode.TreeItemCollapsibleState.Collapsed,
-            }),
-            new DockerTreeItem({
-                label: `Volumes (${this.volumes.length})`,
-                nodeType: 'group-volumes',
-                resourceId: 'group-volumes',
-                collapsible: vscode.TreeItemCollapsibleState.Collapsed,
-            }),
-            new DockerTreeItem({
-                label: `Redes (${this.redes.length})`,
-                nodeType: 'group-networks',
-                resourceId: 'group-networks',
-                collapsible: vscode.TreeItemCollapsibleState.Collapsed,
-            }),
-        ];
+        return this.items;
     }
 
     private async carregarContainers(): Promise<void> {
         try {
             const lista = await this.containerService.listar();
-            this.containers = lista.map(c => {
+            this.items = lista.map(c => {
                 const tipoEstado = resolverEstadoContainer(c.estado);
                 return new DockerTreeItem({
                     label: c.nome,
@@ -145,14 +123,14 @@ export class DockerTreeProvider implements vscode.TreeDataProvider<DockerTreeIte
             });
         } catch (err) {
             vscode.window.showErrorMessage(`Docker Manager (containers): ${err instanceof Error ? err.message : String(err)}`);
-            this.containers = [];
+            this.items = [];
         }
     }
 
     private async carregarImagens(): Promise<void> {
         try {
             const lista = await this.imageService.listar();
-            this.imagens = lista.map(img => {
+            this.items = lista.map(img => {
                 const label = img.tags.length > 0 ? img.tags[0] : img.idCurto;
                 return new DockerTreeItem({
                     label,
@@ -165,14 +143,14 @@ export class DockerTreeProvider implements vscode.TreeDataProvider<DockerTreeIte
             });
         } catch (err) {
             vscode.window.showErrorMessage(`Docker Manager (imagens): ${err instanceof Error ? err.message : String(err)}`);
-            this.imagens = [];
+            this.items = [];
         }
     }
 
     private async carregarVolumes(): Promise<void> {
         try {
             const lista = await this.volumeService.listar();
-            this.volumes = lista.map(v => new DockerTreeItem({
+            this.items = lista.map(v => new DockerTreeItem({
                 label: v.nome,
                 nodeType: 'volume',
                 resourceId: v.nome,
@@ -182,14 +160,14 @@ export class DockerTreeProvider implements vscode.TreeDataProvider<DockerTreeIte
             }));
         } catch (err) {
             vscode.window.showErrorMessage(`Docker Manager (volumes): ${err instanceof Error ? err.message : String(err)}`);
-            this.volumes = [];
+            this.items = [];
         }
     }
 
     private async carregarRedes(): Promise<void> {
         try {
             const lista = await this.networkService.listar();
-            this.redes = lista.map(r => new DockerTreeItem({
+            this.items = lista.map(r => new DockerTreeItem({
                 label: r.nome,
                 nodeType: 'network',
                 resourceId: r.id,
@@ -199,7 +177,7 @@ export class DockerTreeProvider implements vscode.TreeDataProvider<DockerTreeIte
             }));
         } catch (err) {
             vscode.window.showErrorMessage(`Docker Manager (redes): ${err instanceof Error ? err.message : String(err)}`);
-            this.redes = [];
+            this.items = [];
         }
     }
 }

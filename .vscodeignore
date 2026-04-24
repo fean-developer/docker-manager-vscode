@@ -1,5 +1,10 @@
 out/test/
 out/**/*.map
+out/commands/**/*.js
+out/docker/**/*.js
+out/services/**/*.js
+out/views/**/*.js
+out/webviews/**/*.js
 node_modules/
 .vscode-test/
 src/
@@ -7,7 +12,17 @@ src/
 .eslintrc.json
 tsconfig.json
 webpack.config.js
+esbuild.js
 **/*.ts
+test-bundle.js
+test-extension.js
 COPILOT_WORKSPACE.md
 WORKSPACE_TASKS.md
+ANÁLISE_FINAL.md
+CHECKLIST_FINAL.md
+COMANDOS_PRONTOS.md
+CORREÇÃO_RELATÓRIO.md
+MUDANÇAS_CÓDIGO.md
+README_CORREÇÃO.md
+SUMÁRIO_CORREÇÕES.md
 

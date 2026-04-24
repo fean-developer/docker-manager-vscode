@@ -51,7 +51,7 @@
       "activitybar": [
         {
           "id": "dockerManager",
-          "title": "Docker Manager",
+          "title": "Container Manager",
           "icon": "resources/docker.svg"
         }
       ]
@@ -81,103 +81,103 @@
         "command": "dockerManager.refresh",
         "title": "Atualizar",
         "icon": "$(refresh)",
-        "category": "Docker Manager"
+        "category": "Container Manager"
       },
       {
         "command": "dockerManager.startContainer",
         "title": "Iniciar Container",
         "icon": "$(play)",
-        "category": "Docker Manager"
+        "category": "Container Manager"
       },
       {
         "command": "dockerManager.stopContainer",
         "title": "Parar Container",
         "icon": "$(debug-stop)",
-        "category": "Docker Manager"
+        "category": "Container Manager"
       },
       {
         "command": "dockerManager.restartContainer",
         "title": "Reiniciar Container",
         "icon": "$(debug-restart)",
-        "category": "Docker Manager"
+        "category": "Container Manager"
       },
       {
         "command": "dockerManager.removeContainer",
         "title": "Remover Container",
         "icon": "$(trash)",
-        "category": "Docker Manager"
+        "category": "Container Manager"
       },
       {
         "command": "dockerManager.showContainerLogs",
         "title": "Ver Logs",
         "icon": "$(output)",
-        "category": "Docker Manager"
+        "category": "Container Manager"
       },
       {
         "command": "dockerManager.execShell",
         "title": "Abrir Terminal no Container",
         "icon": "$(terminal)",
-        "category": "Docker Manager"
+        "category": "Container Manager"
       },
       {
         "command": "dockerManager.inspectContainer",
         "title": "Inspecionar Container",
         "icon": "$(search)",
-        "category": "Docker Manager"
+        "category": "Container Manager"
       },
       {
         "command": "dockerManager.removeImage",
         "title": "Remover Imagem",
         "icon": "$(trash)",
-        "category": "Docker Manager"
+        "category": "Container Manager"
       },
       {
         "command": "dockerManager.pruneImages",
         "title": "Remover Imagens Não Utilizadas",
         "icon": "$(clear-all)",
-        "category": "Docker Manager"
+        "category": "Container Manager"
       },
       {
         "command": "dockerManager.removeVolume",
         "title": "Remover Volume",
         "icon": "$(trash)",
-        "category": "Docker Manager"
+        "category": "Container Manager"
       },
       {
         "command": "dockerManager.pruneVolumes",
         "title": "Remover Volumes Não Utilizados",
         "icon": "$(clear-all)",
-        "category": "Docker Manager"
+        "category": "Container Manager"
       },
       {
         "command": "dockerManager.openDashboard",
         "title": "Abrir Dashboard",
         "icon": "$(dashboard)",
-        "category": "Docker Manager"
+        "category": "Container Manager"
       },
       {
         "command": "dockerManager.openContainerList",
         "title": "Lista de Containers",
         "icon": "$(list-unordered)",
-        "category": "Docker Manager"
+        "category": "Container Manager"
       },
       {
         "command": "dockerManager.openImageList",
         "title": "Lista de Imagens",
         "icon": "$(package)",
-        "category": "Docker Manager"
+        "category": "Container Manager"
       },
       {
         "command": "dockerManager.openVolumeList",
         "title": "Lista de Volumes",
         "icon": "$(database)",
-        "category": "Docker Manager"
+        "category": "Container Manager"
       },
       {
         "command": "dockerManager.openNetworkList",
         "title": "Lista de Redes",
         "icon": "$(plug)",
-        "category": "Docker Manager"
+        "category": "Container Manager"
       }
     ],
     "menus": {

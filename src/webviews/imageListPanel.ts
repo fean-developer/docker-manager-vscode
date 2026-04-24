@@ -43,7 +43,7 @@ export class ImageListPanel {
 
         const panel = vscode.window.createWebviewPanel(
             ImageListPanel.VIEW_TYPE,
-            'Docker Manager — Imagens',
+            'Container Manager — Imagens',
             vscode.ViewColumn.One,
             {
                 enableScripts: true,

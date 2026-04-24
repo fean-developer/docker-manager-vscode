@@ -219,8 +219,8 @@ export function registrarComandos(
     // ── Dashboard ─────────────────────────────────────────────────────────────
 
     context.subscriptions.push(
-        vscode.commands.registerCommand('dockerManager.openDashboard', () => {
-            const { DashboardPanel } = require('../webviews/dashboardPanel');
+        vscode.commands.registerCommand('dockerManager.openDashboard', async () => {
+            const { DashboardPanel } = await import('../webviews/dashboardPanel');
             DashboardPanel.criar(context.extensionUri);
         }),
     );
@@ -228,9 +228,9 @@ export function registrarComandos(
     // ── Lista de Containers (com checkboxes) ──────────────────────────────────
 
     context.subscriptions.push(
-        vscode.commands.registerCommand('dockerManager.openContainerList', () => {
-            const { ContainerListPanel } = require('../webviews/containerListPanel');
-            const { ContainerDetailPanel } = require('../webviews/containerDetailPanel');
+        vscode.commands.registerCommand('dockerManager.openContainerList', async () => {
+            const { ContainerListPanel } = await import('../webviews/containerListPanel');
+            const { ContainerDetailPanel } = await import('../webviews/containerDetailPanel');
 
             ContainerListPanel.criar(
                 context.extensionUri,
@@ -239,7 +239,7 @@ export function registrarComandos(
                     try {
                         const info = await containerSvc.inspecionar(id);
                         const nome = (info.Name ?? id).replace(/^\//, '');
-                        const { DockerTreeItem } = require('../views/dockerTreeItem');
+                        const { DockerTreeItem } = await import('../views/dockerTreeItem');
                         const item = new DockerTreeItem({
                             label: nome,
                             nodeType: 'container-running',

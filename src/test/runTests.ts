@@ -1,7 +1,8 @@
 import * as path from 'path';
-// eslint-disable-next-line @typescript-eslint/no-require-imports
+// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
 const Mocha = require('mocha') as typeof import('mocha');
-import * as glob from 'glob';
+// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
+const glob = require('glob') as typeof import('glob');
 
 /**
  * Runner dos testes unitários usando Mocha.

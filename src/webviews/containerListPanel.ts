@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { ContainerService, ContainerInfo } from '../services/containerService';
+import { ContainerService } from '../services/containerService';
 
 type AcaoBulk = 'start' | 'stop' | 'restart' | 'kill' | 'remove';
 type AcaoRapida = 'inspect' | 'logs' | 'shell';

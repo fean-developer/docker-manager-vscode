@@ -271,7 +271,7 @@
     "compile": "tsc -p ./",
     "bundle": "node esbuild.js",
     "bundle:watch": "node esbuild.js --watch",
-    "deploy:local": "node esbuild.js && cp out/extension.js ~/.vscode-server/extensions/docker-manager.vscode-docker-manager-0.1.0/out/extension.js",
+    "deploy:local": "npm run bundle && cp out/extension.js ~/.vscode-server/extensions/docker-manager.vscode-docker-manager-0.1.0/out/extension.js && cp out/extension.js.map ~/.vscode-server/extensions/docker-manager.vscode-docker-manager-0.1.0/out/extension.js.map",
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile",
     "lint": "eslint src --ext ts",

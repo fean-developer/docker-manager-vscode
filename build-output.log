@@ -1,0 +1,9 @@
+
+> vscode-docker-manager@0.1.0 bundle
+> node esbuild.js
+
+
+  out/extension.js      1.3mb ⚠️
+  out/extension.js.map  2.4mb
+
+⚡ Done in 94ms

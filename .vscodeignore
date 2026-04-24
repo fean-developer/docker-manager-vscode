@@ -1,5 +1,10 @@
 out/test/
 out/**/*.map
+out/commands/**/*.js
+out/docker/**/*.js
+out/services/**/*.js
+out/views/**/*.js
+out/webviews/**/*.js
 node_modules/
 .vscode-test/
 src/
@@ -9,6 +14,8 @@ tsconfig.json
 webpack.config.js
 esbuild.js
 **/*.ts
+test-bundle.js
+test-extension.js
 COPILOT_WORKSPACE.md
 WORKSPACE_TASKS.md
 

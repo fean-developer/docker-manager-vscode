@@ -1,6 +1,12 @@
-# Docker Manager — Extensão VS Code
+# Container Manager — Extensão VS Code
+
+[![Visual Studio Marketplace](https://img.shields.io/visual-studio-marketplace/v/fean-developer.fean-container-manager?style=flat-square&label=Visual%20Studio%20Marketplace)](https://marketplace.visualstudio.com/items?itemName=fean-developer.fean-container-manager)
+[![Release](https://img.shields.io/badge/release-v0.1.3-blue?style=flat-square)](https://github.com/fean-developer/docker-manager-vscode/releases/tag/v0.1.3)
+[![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 
 Gerencie containers, imagens, volumes e redes Docker diretamente na sua IDE, sem precisar sair do VS Code.
+
+![Container Manager](/assets/Recording%202026-04-24%20175313.gif)
 
 ---
 
@@ -20,39 +26,11 @@ Gerencie containers, imagens, volumes e redes Docker diretamente na sua IDE, sem
 
 ---
 
-## Pré-requisitos
-
-- VS Code 1.85 ou superior
-- Docker Engine instalado e em execução na máquina local
-- Usuário com acesso ao socket Docker (`/var/run/docker.sock` no Linux/macOS)
-
-### Linux — Conceder acesso ao socket Docker sem sudo
-
-```bash
-sudo usermod -aG docker $USER
-# Faça logout e login novamente para aplicar
-```
-
----
-
-## Instalação
-
-1. Abra o VS Code
-2. Vá em Extensions (`Ctrl+Shift+X`)
-3. Busque por **Docker Manager**
-4. Clique em **Install**
-
-Ou instale manualmente o `.vsix`:
-
-```bash
-code --install-extension vscode-docker-manager-0.1.0.vsix
-```
-
----
-
 ## Como usar
 
-Após a instalação, o ícone do Docker Manager aparece na barra lateral (Activity Bar).
+Após a instalação, o ícone do Container Manager aparece na barra lateral (Activity Bar).
+
+![Icon Bar](/assets/image.png)
 
 ### Dashboard
 
@@ -66,7 +44,11 @@ Clique no ícone `$(dashboard)` na toolbar da sidebar para abrir o **Dashboard**
 | Volumes | Quantidade total |
 | Redes | Quantidade total |
 
+![Dashboard](</assets/Screenshot 2026-04-24 173541.png>)
+
 ### Lista de Containers (visão Portainer)
+
+![Container List](/assets/image-1.png)
 
 Clique no ícone `$(list-unordered)` na toolbar da sidebar para abrir a **Lista de Containers**.
 
@@ -107,6 +89,8 @@ Aberto via **Inspecionar Container**, exibe 5 abas:
 **Botões de ação**: Start, Stop, Restart e Remover — estado dos botões atualizado automaticamente conforme o container.
 
 ### Imagens
+
+![alt text](/assets/image-2.png)
 
 | Ação | Como fazer |
 |---|---|
@@ -166,34 +150,6 @@ npm run watch
 
 # Pressione F5 no VS Code para abrir a Extension Development Host
 ```
-
-### Estrutura do projeto
-
-```
-src/
-├── extension.ts                   # Entry point
-├── docker/
-│   └── dockerClient.ts            # Singleton de conexão com o Docker
-├── services/
-│   ├── containerService.ts        # Operações de containers (start/stop/restart/kill/pause/resume/remove/logs/stats)
-│   ├── imageService.ts            # Operações de imagens
-│   ├── volumeService.ts           # Operações de volumes
-│   └── networkService.ts          # Operações de redes
-├── views/
-│   ├── dockerTreeProvider.ts      # TreeDataProvider da sidebar com polling automático
-│   └── dockerTreeItem.ts          # Itens da árvore com ícones e badges dinâmicos
-├── commands/
-│   └── dockerCommands.ts          # Todos os comandos registrados
-├── webviews/
-│   ├── dashboardPanel.ts          # Dashboard — visão geral do ambiente Docker
-│   ├── containerListPanel.ts      # Lista de containers com checkboxes e ações em lote
-│   └── containerDetailPanel.ts    # Detalhe do container com 5 abas e botões de ação
-└── test/
-    ├── dockerClient.test.ts
-    ├── containerService.test.ts
-    └── runTests.ts
-```
-
 ---
 
 ## Pré-requisitos
@@ -222,111 +178,6 @@ Ou instale manualmente o `.vsix`:
 
 ```bash
 code --install-extension vscode-docker-manager-0.1.0.vsix
-```
-
----
-
-## Como usar
-
-Após a instalação, o ícone do Docker Manager aparece na barra lateral (Activity Bar).
-
-### Containers
-
-| Ação | Como fazer |
-|---|---|
-| Ver containers | Expanda o grupo **Containers** na sidebar |
-| Iniciar | Clique direito → **Iniciar Container** |
-| Parar | Clique direito → **Parar Container** |
-| Reiniciar | Clique direito → **Reiniciar Container** |
-| Ver logs | Clique direito → **Ver Logs** |
-| Abrir terminal | Clique direito → **Abrir Terminal no Container** |
-| Inspecionar / Detalhes | Clique no container |
-| Remover | Clique direito → **Remover Container** *(confirmação obrigatória)* |
-
-### Imagens
-
-| Ação | Como fazer |
-|---|---|
-| Ver imagens | Expanda o grupo **Imagens** |
-| Remover imagem | Clique direito → **Remover Imagem** *(confirmação obrigatória)* |
-| Limpar não utilizadas | Comando `Docker Manager: Remover Imagens Não Utilizadas` |
-
-### Volumes
-
-| Ação | Como fazer |
-|---|---|
-| Ver volumes | Expanda o grupo **Volumes** |
-| Remover volume | Clique direito → **Remover Volume** *(confirmação obrigatória)* |
-| Limpar não utilizados | Comando `Docker Manager: Remover Volumes Não Utilizados` |
-
----
-
-## Segurança
-
-> **Atenção:** O acesso ao socket Docker é equivalente a acesso root no host.
-
-Esta extensão adota as seguintes medidas de segurança:
-
-- **Acesso somente local**: conexão exclusiva via Unix socket (`/var/run/docker.sock`) ou named pipe no Windows. Nenhuma conexão de rede é aberta.
-- **Sem servidor HTTP**: a extensão não expõe nenhuma porta ou serviço de rede.
-- **Sem log de dados sensíveis**: variáveis de ambiente e configurações de container não são logadas.
-- **Confirmação obrigatória** para todas as ações destrutivas (remover container, imagem, volume).
-- **Content Security Policy (CSP)** rígida nos Webviews: apenas scripts com nonce são permitidos; nenhum recurso externo é carregado.
-- **Webview com `localResourceRoots` restrito**: apenas o diretório `resources/` da extensão pode ser acessado.
-
-### Riscos conhecidos
-
-| Risco | Mitigação |
-|---|---|
-| Acesso ao socket Docker | Apenas via socket local; documentado explicitamente |
-| Execução de comandos no container | Requer que o container esteja em execução; usuário inicia a ação |
-| Remoção de dados | Confirmação modal obrigatória antes de qualquer remoção |
-| XSS no Webview | CSP com nonce; toda saída de dados do Docker é escapada antes de renderizar |
-
----
-
-## Desenvolvimento
-
-```bash
-# Clone o repositório
-git clone https://github.com/seu-usuario/vscode-docker-manager.git
-cd vscode-docker-manager
-
-# Instale as dependências
-npm install
-
-# Compile
-npm run compile
-
-# Inicie no modo watch
-npm run watch
-
-# Pressione F5 no VS Code para abrir a Extension Development Host
-```
-
-### Estrutura do projeto
-
-```
-src/
-├── extension.ts                 # Entry point
-├── docker/
-│   └── dockerClient.ts          # Singleton de conexão com o Docker
-├── services/
-│   ├── containerService.ts      # Operações de containers
-│   ├── imageService.ts          # Operações de imagens
-│   ├── volumeService.ts         # Operações de volumes
-│   └── networkService.ts        # Operações de redes
-├── views/
-│   ├── dockerTreeProvider.ts    # TreeDataProvider da sidebar
-│   └── dockerTreeItem.ts        # Itens da árvore com ícones dinâmicos
-├── commands/
-│   └── dockerCommands.ts        # Todos os comandos registrados
-├── webviews/
-│   └── containerDetailPanel.ts  # Webview de detalhes do container
-└── test/
-    ├── dockerClient.test.ts
-    ├── containerService.test.ts
-    └── runTests.ts
 ```
 
 ---

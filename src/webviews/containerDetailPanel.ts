@@ -341,6 +341,28 @@ export class ContainerDetailPanel {
         }
         .log-status { font-style: italic; }
         .log-status.ativo { color: var(--vscode-testing-iconPassed, #4caf50); font-style: normal; font-weight: 500; }
+
+        /* Gráficos de tempo real */
+        .graficos-ao-vivo { margin-top: 20px; }
+        .grafico-bloco { margin-bottom: 14px; }
+        .grafico-titulo {
+            font-size: 0.78em;
+            font-weight: 600;
+            color: var(--vscode-descriptionForeground);
+            margin-bottom: 4px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .grafico-legenda { font-weight: normal; font-size: 0.95em; }
+        canvas.grafico-canvas {
+            width: 100%;
+            height: 110px;
+            display: block;
+            border-radius: 4px;
+            background: var(--vscode-editorWidget-background, #1e1e1e);
+            border: 1px solid var(--cor-borda);
+        }
     </style>
 </head>
 <body>
@@ -367,7 +389,33 @@ export class ContainerDetailPanel {
     </div>
 
     <div id="tab-overview" class="conteudo-aba ativa">
-        <p class="carregando">Carregando dados do container...</p>
+        <div id="overview-tabela"><p class="carregando">Carregando dados do container...</p></div>
+        <div class="graficos-ao-vivo">
+            <div class="grafico-bloco">
+                <div class="grafico-titulo">
+                    CPU ao vivo
+                    <span class="grafico-legenda" id="label-cpu-atual" style="color:#4fc3f7">--</span>
+                </div>
+                <canvas id="canvas-cpu" class="grafico-canvas"></canvas>
+            </div>
+            <div class="grafico-bloco">
+                <div class="grafico-titulo">
+                    Mem&#243;ria ao vivo
+                    <span class="grafico-legenda" id="label-mem-atual" style="color:#81c784">--</span>
+                </div>
+                <canvas id="canvas-mem" class="grafico-canvas"></canvas>
+            </div>
+            <div class="grafico-bloco">
+                <div class="grafico-titulo">
+                    Rede ao vivo
+                    <span id="label-rede-atual" class="grafico-legenda">
+                        <span style="color:#ffb74d">&#8595; RX: --</span>&nbsp;&nbsp;
+                        <span style="color:#ef5350">&#8593; TX: --</span>
+                    </span>
+                </div>
+                <canvas id="canvas-rede" class="grafico-canvas"></canvas>
+            </div>
+        </div>
     </div>
     <div id="tab-logs" class="conteudo-aba">
         <div class="log-toolbar">
@@ -401,6 +449,15 @@ export class ContainerDetailPanel {
         let logAutoTimer = null;
         let logAbaAtiva = false;
 
+        // Histórico de métricas para gráficos em tempo real (máx 60 amostras ≈ 2 min)
+        const MAX_PONTOS = 60;
+        const historicoCpu = [];
+        const historicoMem = [];
+        const historicoRx = [];
+        const historicoTx = [];
+        let prevRxTotal = null;
+        let prevTxTotal = null;
+
         // Registrar listeners nos botões de aba DENTRO do script nonce
         // (onclick inline é bloqueado pela Content Security Policy)
         document.querySelectorAll('.aba').forEach(function(btn) {
@@ -420,6 +477,9 @@ export class ContainerDetailPanel {
         // Solicitar dados ao abrir
         vscode.postMessage({ command: 'carregarDados' });
         vscode.postMessage({ command: 'carregarStats' });
+
+        // Polling de stats a cada 2s para atualizar gráficos ao vivo
+        setInterval(function() { vscode.postMessage({ command: 'carregarStats' }); }, 2000);
 
         function mudarAba(id) {
             logAbaAtiva = (id === 'logs');
@@ -479,7 +539,11 @@ export class ContainerDetailPanel {
             switch (msg.command) {
                 case 'dadosContainer': renderizarDados(msg.data); break;
                 case 'logs':          renderizarLogs(msg.data); break;
-                case 'stats':         renderizarStats(msg.data); break;
+                case 'stats':
+                    atualizarHistoricoStats(msg.data);
+                    renderizarStats(msg.data);
+                    desenharGraficos();
+                    break;
                 case 'erro':          mostrarErro('tab-overview', msg.data); break;
                 case 'erroLogs': {
                     var elLogsErr = document.getElementById('log-conteudo');
@@ -514,7 +578,7 @@ export class ContainerDetailPanel {
 
             // Overview
             const criado = new Date(info.Created).toLocaleString('pt-BR');
-            document.getElementById('tab-overview').innerHTML =
+            document.getElementById('overview-tabela').innerHTML =
                 '<table>' +
                 linha('ID', info.Id ? info.Id.substring(0, 12) : '-') +
                 linha('Imagem', info.Config?.Image ?? '-') +
@@ -586,6 +650,215 @@ export class ContainerDetailPanel {
                 card('Rede RX', fmt(rxBytes)) +
                 card('Rede TX', fmt(txBytes)) +
                 '</div>';
+        }
+
+        function atualizarHistoricoStats(stats) {
+            if (!stats || !stats.cpu_stats) return;
+            var cuTotal  = stats.cpu_stats.cpu_usage ? stats.cpu_stats.cpu_usage.total_usage : 0;
+            var pcuTotal = stats.precpu_stats && stats.precpu_stats.cpu_usage ? stats.precpu_stats.cpu_usage.total_usage : 0;
+            var sisDelta = (stats.cpu_stats.system_cpu_usage || 0) - (stats.precpu_stats ? (stats.precpu_stats.system_cpu_usage || 0) : 0);
+            var numCpus  = stats.cpu_stats.online_cpus ||
+                           (stats.cpu_stats.cpu_usage && stats.cpu_stats.cpu_usage.percpu_usage ? stats.cpu_stats.cpu_usage.percpu_usage.length : 1);
+            var cpuPct   = sisDelta > 0 ? Math.min(100, ((cuTotal - pcuTotal) / sisDelta) * numCpus * 100) : 0;
+
+            var memUsado = stats.memory_stats ? (stats.memory_stats.usage || 0) : 0;
+            var memTotal = stats.memory_stats ? (stats.memory_stats.limit || 1) : 1;
+            var memPct   = Math.min(100, (memUsado / memTotal) * 100);
+
+            var redes    = stats.networks ? Object.values(stats.networks) : [];
+            var rxTotal  = redes.reduce(function(acc, n) { return acc + (n.rx_bytes || 0); }, 0);
+            var txTotal  = redes.reduce(function(acc, n) { return acc + (n.tx_bytes || 0); }, 0);
+            var rxDelta  = prevRxTotal !== null ? Math.max(0, rxTotal - prevRxTotal) / 2 : 0;
+            var txDelta  = prevTxTotal !== null ? Math.max(0, txTotal - prevTxTotal) / 2 : 0;
+            prevRxTotal  = rxTotal;
+            prevTxTotal  = txTotal;
+
+            historicoCpu.push(cpuPct);
+            historicoMem.push(memPct);
+            historicoRx.push(rxDelta);
+            historicoTx.push(txDelta);
+            if (historicoCpu.length > MAX_PONTOS) historicoCpu.shift();
+            if (historicoMem.length > MAX_PONTOS) historicoMem.shift();
+            if (historicoRx.length  > MAX_PONTOS) historicoRx.shift();
+            if (historicoTx.length  > MAX_PONTOS) historicoTx.shift();
+
+            var lCpu = document.getElementById('label-cpu-atual');
+            if (lCpu) lCpu.textContent = cpuPct.toFixed(1) + '%';
+            var lMem = document.getElementById('label-mem-atual');
+            if (lMem) lMem.textContent = memPct.toFixed(1) + '%';
+            var lRede = document.getElementById('label-rede-atual');
+            if (lRede) lRede.innerHTML =
+                '<span style="color:#ffb74d">&#8595; RX: ' + fmt(rxDelta) + '/s</span>' +
+                '&nbsp;&nbsp;<span style="color:#ef5350">&#8593; TX: ' + fmt(txDelta) + '/s</span>';
+        }
+
+        function desenharGraficos() {
+            desenharGrafico('canvas-cpu', historicoCpu, 100, '%', '#4fc3f7');
+            desenharGrafico('canvas-mem', historicoMem, 100, '%', '#81c784');
+            desenharGraficoRede('canvas-rede', historicoRx, historicoTx);
+        }
+
+        function hexToRgba(hex, a) {
+            var r = parseInt(hex.slice(1, 3), 16);
+            var g = parseInt(hex.slice(3, 5), 16);
+            var b = parseInt(hex.slice(5, 7), 16);
+            return 'rgba(' + r + ',' + g + ',' + b + ',' + a + ')';
+        }
+
+        function prepararCanvas(canvas) {
+            var w = canvas.getBoundingClientRect().width | 0;
+            if (w < 10) w = (canvas.width > 10 ? canvas.width : 500);
+            if (canvas.width !== w) canvas.width = w;
+            if (canvas.height !== 110) canvas.height = 110;
+        }
+
+        function desenharGrafico(id, dados, maxY, unidade, cor) {
+            var c = document.getElementById(id);
+            if (!c) return;
+            prepararCanvas(c);
+            var ctx = c.getContext('2d');
+            var W = c.width, H = c.height;
+            var pl = 42, pr = 46, pt = 8, pb = 20;
+            var gW = W - pl - pr, gH = H - pt - pb;
+
+            ctx.clearRect(0, 0, W, H);
+
+            // Grade e rótulos eixo Y
+            ctx.lineWidth = 0.5;
+            ctx.font = '9px monospace';
+            for (var i = 0; i <= 4; i++) {
+                var gy = pt + gH * i / 4;
+                ctx.strokeStyle = 'rgba(128,128,128,0.18)';
+                ctx.beginPath(); ctx.moveTo(pl, gy); ctx.lineTo(pl + gW, gy); ctx.stroke();
+                ctx.fillStyle = 'rgba(180,180,180,0.7)';
+                ctx.textAlign = 'right';
+                ctx.fillText(Math.round(maxY * (1 - i / 4)) + unidade, pl - 4, gy + 3);
+            }
+
+            if (dados.length < 2) return;
+
+            // Preenchimento gradiente
+            var grad = ctx.createLinearGradient(0, pt, 0, pt + gH);
+            grad.addColorStop(0, hexToRgba(cor, 0.35));
+            grad.addColorStop(1, hexToRgba(cor, 0.02));
+            ctx.beginPath();
+            for (var k = 0; k < dados.length; k++) {
+                var xf = pl + (k / (MAX_PONTOS - 1)) * gW;
+                var yf = pt + gH * (1 - Math.min(1, dados[k] / maxY));
+                if (k === 0) ctx.moveTo(xf, yf); else ctx.lineTo(xf, yf);
+            }
+            ctx.lineTo(pl + ((dados.length - 1) / (MAX_PONTOS - 1)) * gW, pt + gH);
+            ctx.lineTo(pl, pt + gH);
+            ctx.closePath();
+            ctx.fillStyle = grad;
+            ctx.fill();
+
+            // Linha principal
+            ctx.beginPath();
+            for (var j = 0; j < dados.length; j++) {
+                var xp = pl + (j / (MAX_PONTOS - 1)) * gW;
+                var yp = pt + gH * (1 - Math.min(1, dados[j] / maxY));
+                if (j === 0) ctx.moveTo(xp, yp); else ctx.lineTo(xp, yp);
+            }
+            ctx.strokeStyle = cor;
+            ctx.lineWidth = 1.5;
+            ctx.lineJoin = 'round';
+            ctx.stroke();
+
+            // Ponto atual
+            var ux = pl + ((dados.length - 1) / (MAX_PONTOS - 1)) * gW;
+            var uy = pt + gH * (1 - Math.min(1, dados[dados.length - 1] / maxY));
+            ctx.beginPath(); ctx.arc(ux, uy, 3, 0, Math.PI * 2);
+            ctx.fillStyle = cor; ctx.fill();
+
+            // Valor atual à direita
+            ctx.font = 'bold 10px monospace';
+            ctx.fillStyle = cor;
+            ctx.textAlign = 'left';
+            ctx.fillText(dados[dados.length - 1].toFixed(1) + unidade, pl + gW + 5, pt + 12);
+        }
+
+        function desenharGraficoRede(id, dadosRx, dadosTx) {
+            var c = document.getElementById(id);
+            if (!c) return;
+            prepararCanvas(c);
+            var ctx = c.getContext('2d');
+            var W = c.width, H = c.height;
+            var pl = 54, pr = 46, pt = 8, pb = 20;
+            var gW = W - pl - pr, gH = H - pt - pb;
+
+            ctx.clearRect(0, 0, W, H);
+
+            var todosVals = dadosRx.concat(dadosTx);
+            var maxV = todosVals.length > 0 ? Math.max.apply(null, todosVals) : 0;
+            if (maxV < 1024) maxV = 1024;
+
+            var unid, esc2;
+            if      (maxV >= 1073741824) { unid = 'GB/s'; esc2 = 1073741824; }
+            else if (maxV >= 1048576)    { unid = 'MB/s'; esc2 = 1048576; }
+            else if (maxV >= 1024)       { unid = 'KB/s'; esc2 = 1024; }
+            else                         { unid = 'B/s';  esc2 = 1; }
+
+            // Grade e rótulos
+            ctx.lineWidth = 0.5;
+            ctx.font = '9px monospace';
+            for (var i = 0; i <= 4; i++) {
+                var gy = pt + gH * i / 4;
+                ctx.strokeStyle = 'rgba(128,128,128,0.18)';
+                ctx.beginPath(); ctx.moveTo(pl, gy); ctx.lineTo(pl + gW, gy); ctx.stroke();
+                ctx.fillStyle = 'rgba(180,180,180,0.7)';
+                ctx.textAlign = 'right';
+                ctx.fillText((maxV / esc2 * (1 - i / 4)).toFixed(1) + ' ' + unid, pl - 4, gy + 3);
+            }
+
+            function linhaRede(dados, cor) {
+                if (dados.length < 2) return;
+                var grad2 = ctx.createLinearGradient(0, pt, 0, pt + gH);
+                grad2.addColorStop(0, hexToRgba(cor, 0.25));
+                grad2.addColorStop(1, hexToRgba(cor, 0.02));
+                ctx.beginPath();
+                for (var k = 0; k < dados.length; k++) {
+                    var xf = pl + (k / (MAX_PONTOS - 1)) * gW;
+                    var yf = pt + gH * (1 - Math.min(1, dados[k] / maxV));
+                    if (k === 0) ctx.moveTo(xf, yf); else ctx.lineTo(xf, yf);
+                }
+                ctx.lineTo(pl + ((dados.length - 1) / (MAX_PONTOS - 1)) * gW, pt + gH);
+                ctx.lineTo(pl, pt + gH);
+                ctx.closePath();
+                ctx.fillStyle = grad2;
+                ctx.fill();
+                ctx.beginPath();
+                for (var j = 0; j < dados.length; j++) {
+                    var xp = pl + (j / (MAX_PONTOS - 1)) * gW;
+                    var yp = pt + gH * (1 - Math.min(1, dados[j] / maxV));
+                    if (j === 0) ctx.moveTo(xp, yp); else ctx.lineTo(xp, yp);
+                }
+                ctx.strokeStyle = cor;
+                ctx.lineWidth = 1.5;
+                ctx.lineJoin = 'round';
+                ctx.stroke();
+                if (dados.length > 0) {
+                    var ux = pl + ((dados.length - 1) / (MAX_PONTOS - 1)) * gW;
+                    var uy = pt + gH * (1 - Math.min(1, dados[dados.length - 1] / maxV));
+                    ctx.beginPath(); ctx.arc(ux, uy, 3, 0, Math.PI * 2);
+                    ctx.fillStyle = cor; ctx.fill();
+                }
+            }
+
+            linhaRede(dadosRx, '#ffb74d');
+            linhaRede(dadosTx, '#ef5350');
+
+            // Valores atuais
+            ctx.font = 'bold 10px monospace';
+            ctx.textAlign = 'left';
+            if (dadosRx.length > 0) {
+                ctx.fillStyle = '#ffb74d';
+                ctx.fillText('\u2193' + (dadosRx[dadosRx.length - 1] / esc2).toFixed(1) + unid, pl + gW + 5, pt + 12);
+            }
+            if (dadosTx.length > 0) {
+                ctx.fillStyle = '#ef5350';
+                ctx.fillText('\u2191' + (dadosTx[dadosTx.length - 1] / esc2).toFixed(1) + unid, pl + gW + 5, pt + 26);
+            }
         }
 
         function mostrarErro(tabId, msg) {

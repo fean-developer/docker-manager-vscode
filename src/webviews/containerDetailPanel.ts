@@ -165,13 +165,55 @@ export class ContainerDetailPanel {
     private async _enviarLogs(): Promise<void> {
         try {
             const logs = await this._svc.obterLogs(this._item.resourceId, 200);
-            this._panel.webview.postMessage({ command: 'logs', data: logs });
+            const html = ContainerDetailPanel._ansiParaHtml(logs);
+            this._panel.webview.postMessage({ command: 'logs', data: html });
         } catch (err) {
             this._panel.webview.postMessage({
                 command: 'erroLogs',
                 data: err instanceof Error ? err.message : String(err),
             });
         }
+    }
+
+    /**
+     * Converte sequências ANSI de cor para HTML com spans coloridos.
+     * Processado no lado TypeScript para evitar embutir bytes de controle no template HTML.
+     */
+    private static _ansiParaHtml(texto: string): string {
+        const CORES: Record<string, string> = {
+            '30': '#555555', '31': '#cc0000', '32': '#4e9a06', '33': '#c4a000',
+            '34': '#3465a4', '35': '#75507b', '36': '#06989a', '37': '#d3d7cf',
+            '90': '#888a85', '91': '#ef2929', '92': '#8ae234', '93': '#fce94f',
+            '94': '#729fcf', '95': '#ad7fa8', '96': '#34e2e2', '97': '#eeeeec',
+        };
+        const escHtml = (s: string) =>
+            s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+        // Regex segura — \x1b aqui está em código TypeScript compilado, não no HTML gerado
+        // eslint-disable-next-line no-control-regex
+        const partes = texto.split(/\x1b\[([0-9;]*)m/);
+        let resultado = '';
+        let spanAberto = false;
+
+        for (let i = 0; i < partes.length; i++) {
+            if (i % 2 === 0) {
+                resultado += escHtml(partes[i]);
+            } else {
+                if (spanAberto) { resultado += '</span>'; spanAberto = false; }
+                if (partes[i] === '' || partes[i] === '0') { continue; }
+                const codigos = partes[i].split(';');
+                let estilo = '';
+                let negrito = false;
+                for (const cod of codigos) {
+                    if (cod === '1') { negrito = true; }
+                    else if (CORES[cod]) { estilo += `color:${CORES[cod]};`; }
+                }
+                if (negrito) { estilo += 'font-weight:bold;'; }
+                if (estilo) { resultado += `<span style="${estilo}">`; spanAberto = true; }
+            }
+        }
+        if (spanAberto) { resultado += '</span>'; }
+        return resultado;
     }
 
     private async _enviarStats(): Promise<void> {
@@ -363,6 +405,67 @@ export class ContainerDetailPanel {
             background: var(--vscode-editorWidget-background, #1e1e1e);
             border: 1px solid var(--cor-borda);
         }
+
+        /* Inspect (JSON Tree/Text) */
+        .inspect-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 10px;
+        }
+        .inspect-titulo {
+            font-weight: 600;
+            font-size: 1em;
+            color: var(--vscode-descriptionForeground);
+        }
+        .inspect-toolbar { display: flex; gap: 4px; }
+        .btn-inspect-mode {
+            padding: 3px 12px;
+            border: 1px solid var(--cor-borda);
+            background: var(--cor-aba-inativa);
+            color: var(--cor-texto);
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 0.82em;
+            font-family: inherit;
+        }
+        .btn-inspect-mode.ativa {
+            background: var(--cor-aba-ativa);
+            border-color: var(--cor-destaque);
+        }
+        .inspect-view {
+            background: var(--vscode-terminal-background, #1e1e1e);
+            color: var(--vscode-terminal-foreground, #d4d4d4);
+            padding: 12px;
+            border-radius: 4px;
+            overflow: auto;
+            max-height: 600px;
+            font-size: 0.85em;
+            line-height: 1.6;
+            font-family: var(--vscode-editor-font-family, monospace);
+        }
+        pre.inspect-view { white-space: pre; word-break: break-all; }
+        .json-filhos { padding-left: 18px; border-left: 1px solid rgba(128,128,128,0.15); margin-left: 4px; }
+        .json-item { margin: 1px 0; }
+        .json-toggle {
+            display: inline-block;
+            cursor: pointer;
+            width: 14px;
+            color: var(--vscode-descriptionForeground);
+            user-select: none;
+            font-size: 0.75em;
+            vertical-align: middle;
+        }
+        .json-toggle:hover { color: var(--cor-destaque); }
+        .json-chave       { color: #9cdcfe; }
+        .json-str         { color: #ce9178; }
+        .json-num         { color: #b5cea8; }
+        .json-bool        { color: #569cd6; }
+        .json-null        { color: #569cd6; font-style: italic; }
+        .json-bracket     { color: var(--vscode-terminal-foreground, #d4d4d4); }
+        .json-fecha       { color: var(--vscode-terminal-foreground, #d4d4d4); }
+        .json-dois-pontos { color: var(--vscode-terminal-foreground, #d4d4d4); }
+        .json-virgula     { color: var(--vscode-terminal-foreground, #d4d4d4); }
     </style>
 </head>
 <body>
@@ -386,6 +489,7 @@ export class ContainerDetailPanel {
         <button class="aba" data-aba="env">Variáveis de Ambiente</button>
         <button class="aba" data-aba="portas">Portas</button>
         <button class="aba" data-aba="stats">Stats</button>
+        <button class="aba" data-aba="inspect">Inspect</button>
     </div>
 
     <div id="tab-overview" class="conteudo-aba ativa">
@@ -442,12 +546,26 @@ export class ContainerDetailPanel {
     <div id="tab-stats" class="conteudo-aba">
         <p class="carregando">Carregando estatísticas...</p>
     </div>
+    <div id="tab-inspect" class="conteudo-aba">
+        <div class="inspect-header">
+            <span class="inspect-titulo">Inspect</span>
+            <div class="inspect-toolbar">
+                <button class="btn-inspect-mode ativa" data-mode="tree">&#60;/&#62; Tree</button>
+                <button class="btn-inspect-mode" data-mode="text">&#9776; Text</button>
+            </div>
+        </div>
+        <p id="inspect-carregando" class="carregando">Aguardando dados do container...</p>
+        <div id="inspect-tree" class="inspect-view" style="display:none;"></div>
+        <pre id="inspect-text" class="inspect-view" style="display:none;"></pre>
+    </div>
 
     <script nonce="${nonce}">
         const vscode = acquireVsCodeApi();
         let dadosContainer = null;
         let logAutoTimer = null;
         let logAbaAtiva = false;
+        let contadorJson = 0;
+        let inspecaoModo = 'tree';
 
         // Histórico de métricas para gráficos em tempo real (máx 60 amostras ≈ 2 min)
         const MAX_PONTOS = 60;
@@ -494,6 +612,9 @@ export class ContainerDetailPanel {
             if (id === 'stats') {
                 vscode.postMessage({ command: 'carregarStats' });
             }
+            if (id === 'inspect') {
+                renderizarInspecao();
+            }
         }
 
         function iniciarAutoRefreshLogs(segundos) {
@@ -517,6 +638,33 @@ export class ContainerDetailPanel {
                 pararAutoRefreshLogs();
                 var statusEl = document.getElementById('log-status');
                 if (statusEl) { statusEl.textContent = ''; statusEl.className = 'log-status'; }
+            }
+        });
+
+        // Delegação de eventos: toggle de nós JSON e botões de modo inspect
+        document.addEventListener('click', function(evt) {
+            var alvo = evt.target;
+            // Protege contra clique em nó de texto (sem classList)
+            if (!alvo || typeof alvo.classList === 'undefined') return;
+            if (alvo.classList.contains('json-toggle')) {
+                var jnid = alvo.getAttribute('data-jnid');
+                if (jnid) {
+                    var jnEl = document.getElementById(jnid);
+                    if (jnEl) {
+                        var visivel = jnEl.style.display !== 'none';
+                        jnEl.style.display = visivel ? 'none' : '';
+                        alvo.textContent = visivel ? '\u25B6' : '\u25BC';
+                    }
+                }
+            }
+            if (alvo.classList.contains('btn-inspect-mode')) {
+                var modo = alvo.getAttribute('data-mode');
+                if (modo) {
+                    inspecaoModo = modo;
+                    document.querySelectorAll('.btn-inspect-mode').forEach(function(b) { b.classList.remove('ativa'); });
+                    alvo.classList.add('ativa');
+                    renderizarInspecao();
+                }
             }
         });
 
@@ -622,7 +770,10 @@ export class ContainerDetailPanel {
 
         function renderizarLogs(texto) {
             var el = document.getElementById('log-conteudo');
-            if (el) { el.className = ''; el.textContent = texto; }
+            if (!el) return;
+            el.className = '';
+            // texto já chega como HTML com spans de cor processados no servidor TypeScript
+            el.innerHTML = texto;
         }
 
         function renderizarStats(stats) {
@@ -874,6 +1025,81 @@ export class ContainerDetailPanel {
         function esc(s) {
             return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
         }
+
+        // Renderiza a aba Inspect no modo árvore (tree) ou texto bruto (text)
+        function renderizarInspecao() {
+            var carregando = document.getElementById('inspect-carregando');
+            var treeEl = document.getElementById('inspect-tree');
+            var textEl = document.getElementById('inspect-text');
+            if (!dadosContainer) {
+                if (carregando) carregando.style.display = 'block';
+                if (treeEl) treeEl.style.display = 'none';
+                if (textEl) textEl.style.display = 'none';
+                return;
+            }
+            if (carregando) carregando.style.display = 'none';
+            try {
+                if (inspecaoModo === 'tree') {
+                    contadorJson = 0;
+                    if (treeEl) { treeEl.style.display = 'block'; treeEl.innerHTML = criarArvoreJson(dadosContainer, 0); }
+                    if (textEl) textEl.style.display = 'none';
+                } else {
+                    if (treeEl) treeEl.style.display = 'none';
+                    if (textEl) { textEl.style.display = 'block'; textEl.textContent = JSON.stringify(dadosContainer, null, 2); }
+                }
+            } catch (e) {
+                // Fallback seguro: exibe JSON puro se a árvore falhar
+                if (treeEl) treeEl.style.display = 'none';
+                if (textEl) { textEl.style.display = 'block'; textEl.textContent = JSON.stringify(dadosContainer, null, 2); }
+            }
+        }
+
+        // Gera HTML recursivo de árvore JSON colapsável
+        function criarArvoreJson(valor, nivel) {
+            if (valor === null) return '<span class="json-null">null</span>';
+            if (valor === undefined) return '<span class="json-null">undefined</span>';
+            if (typeof valor === 'boolean') return '<span class="json-bool">' + esc(String(valor)) + '</span>';
+            if (typeof valor === 'number') return '<span class="json-num">' + valor + '</span>';
+            if (typeof valor === 'string') {
+                if (valor === '') return '<span class="json-str">\u201c\u201d</span>';
+                return '<span class="json-str">\u201c' + esc(valor) + '\u201d</span>';
+            }
+            if (Array.isArray(valor)) {
+                if (valor.length === 0) return '<span class="json-bracket">[]</span>';
+                var nidArr = 'jn' + (++contadorJson);
+                var hArr = '<span class="json-toggle" data-jnid="' + nidArr + '">\u25BC</span> ';
+                hArr += '<span class="json-bracket">[</span>';
+                hArr += '<div id="' + nidArr + '" class="json-filhos">';
+                for (var ia = 0; ia < valor.length; ia++) {
+                    hArr += '<div class="json-item">' + criarArvoreJson(valor[ia], nivel + 1);
+                    if (ia < valor.length - 1) hArr += '<span class="json-virgula">,</span>';
+                    hArr += '</div>';
+                }
+                hArr += '</div><span class="json-fecha">]</span>';
+                return hArr;
+            }
+            if (typeof valor === 'object') {
+                var chaves = Object.keys(valor);
+                if (chaves.length === 0) return '<span class="json-bracket">{}</span>';
+                var nidObj = 'jn' + (++contadorJson);
+                var hObj = '<span class="json-toggle" data-jnid="' + nidObj + '">\u25BC</span> ';
+                hObj += '<span class="json-bracket">{</span>';
+                hObj += '<div id="' + nidObj + '" class="json-filhos">';
+                for (var ib = 0; ib < chaves.length; ib++) {
+                    var kk = chaves[ib];
+                    hObj += '<div class="json-item">';
+                    hObj += '<span class="json-chave">' + esc(kk) + '</span>';
+                    hObj += '<span class="json-dois-pontos">: </span>';
+                    hObj += criarArvoreJson(valor[kk], nivel + 1);
+                    if (ib < chaves.length - 1) hObj += '<span class="json-virgula">,</span>';
+                    hObj += '</div>';
+                }
+                hObj += '</div><span class="json-fecha">}</span>';
+                return hObj;
+            }
+            return esc(String(valor));
+        }
+
         function fmt(bytes) {
             if (bytes < 1024) return bytes + ' B';
             if (bytes < 1048576) return (bytes/1024).toFixed(1) + ' KB';

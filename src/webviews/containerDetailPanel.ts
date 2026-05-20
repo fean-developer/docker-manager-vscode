@@ -12,6 +12,7 @@ import { ContainerService } from '../services/containerService';
  */
 export class ContainerDetailPanel {
     private static readonly VIEW_TYPE = 'dockerManager.containerDetail';
+    // Chave = nome do container (não ID), assim sobrevive a recriaçõess
     private static paineis: Map<string, ContainerDetailPanel> = new Map();
 
     private readonly _panel: vscode.WebviewPanel;
@@ -19,6 +20,8 @@ export class ContainerDetailPanel {
     private readonly _item: DockerTreeItem;
     private readonly _svc: ContainerService;
     private _disposables: vscode.Disposable[] = [];
+    // ID atual do container — atualizado dinamicamente a cada operação
+    private _containerId: string;
 
     private constructor(
         panel: vscode.WebviewPanel,
@@ -30,20 +33,40 @@ export class ContainerDetailPanel {
         this._extensionUri = extensionUri;
         this._item = item;
         this._svc = svc;
+        this._containerId = item.resourceId;
 
-        // Registra o listener ANTES de renderizar o HTML.
-        // Se fosse ao contrário, o webview poderia enviar mensagens antes
-        // do listener estar pronto e elas seriam perdidas.
         this._registrarMensagens();
         this._renderizar();
 
         this._panel.onDidDispose(() => this._destruir(), null, this._disposables);
-        // NÃO re-renderizamos em onDidChangeViewState porque retainContextWhenHidden=true
-        // preserva o estado do webview quando ele é ocultado/revelado.
+    }
+
+    /**
+     * Resolve o ID atual do container pelo nome, para lidar com containers recriados.
+     * Se o ID salvo ainda funcionar, usa ele (evita chamada extra ao Docker).
+     */
+    private async _resolverIdAtual(): Promise<string> {
+        const nome = this._item.containerData?.nome ?? this._item.label as string;
+        // Primeiro tenta usar o ID salvo — se funcionar, ótimo
+        try {
+            await this._svc.inspecionarPorId(this._containerId);
+            return this._containerId;
+        } catch {
+            // ID não existe mais — container foi recriado, busca pelo nome
+        }
+        const lista = await this._svc.listar();
+        const encontrado = lista.find(c => c.nome === nome);
+        if (!encontrado) {
+            throw new Error(`Container "${nome}" não encontrado. Pode ter sido removido.`);
+        }
+        // Atualiza o ID cached
+        this._containerId = encontrado.id;
+        return this._containerId;
     }
 
     /**
      * Cria ou exibe o painel existente para este container.
+     * Usa o nome como chave para sobreviver a recriaçõess de containers.
      */
     public static criar(
         extensionUri: vscode.Uri,
@@ -51,10 +74,14 @@ export class ContainerDetailPanel {
         svc: ContainerService,
     ): void {
         const coluna = vscode.window.activeTextEditor?.viewColumn ?? vscode.ViewColumn.One;
-        const chave = item.resourceId;
+        // Usa nome como chave, não ID (containers recriados têm novo ID mas mesmo nome)
+        const nome = item.containerData?.nome ?? item.label as string;
+        const chave = `container:${nome}`;
 
         const existente = ContainerDetailPanel.paineis.get(chave);
         if (existente) {
+            // Atualiza o ID caso o container tenha sido recriado
+            existente._containerId = item.resourceId;
             existente._panel.reveal(coluna);
             existente._renderizar();
             return;
@@ -62,7 +89,7 @@ export class ContainerDetailPanel {
 
         const panel = vscode.window.createWebviewPanel(
             ContainerDetailPanel.VIEW_TYPE,
-            `Container: ${item.containerData?.nome ?? item.label as string}`,
+            `Container: ${nome}`,
             coluna,
             {
                 enableScripts: true,
@@ -107,9 +134,9 @@ export class ContainerDetailPanel {
      */
     private async _executarAcao(acao: WebviewMessage['acao']): Promise<void> {
         const nome = this._item.containerData?.nome ?? this._item.label as string;
-        const id = this._item.resourceId;
 
         try {
+            const id = await this._resolverIdAtual();
             switch (acao) {
                 case 'start':
                     await this._svc.iniciar(id);
@@ -152,7 +179,8 @@ export class ContainerDetailPanel {
 
     private async _enviarDadosCompletos(): Promise<void> {
         try {
-            const info = await this._svc.inspecionar(this._item.resourceId);
+            const id = await this._resolverIdAtual();
+            const info = await this._svc.inspecionar(id);
             this._panel.webview.postMessage({ command: 'dadosContainer', data: info });
         } catch (err) {
             this._panel.webview.postMessage({
@@ -164,7 +192,8 @@ export class ContainerDetailPanel {
 
     private async _enviarLogs(): Promise<void> {
         try {
-            const logs = await this._svc.obterLogs(this._item.resourceId, 200);
+            const id = await this._resolverIdAtual();
+            const logs = await this._svc.obterLogs(id, 200);
             const html = ContainerDetailPanel._ansiParaHtml(logs);
             this._panel.webview.postMessage({ command: 'logs', data: html });
         } catch (err) {
@@ -218,7 +247,8 @@ export class ContainerDetailPanel {
 
     private async _enviarStats(): Promise<void> {
         try {
-            const stats = await this._svc.obterStats(this._item.resourceId);
+            const id = await this._resolverIdAtual();
+            const stats = await this._svc.obterStats(id);
             this._panel.webview.postMessage({ command: 'stats', data: stats });
         } catch (err) {
             this._panel.webview.postMessage({
@@ -254,218 +284,169 @@ export class ContainerDetailPanel {
     <title>Container: ${escaparHtml(nome)}</title>
     <style>
         :root {
-            --cor-fundo: var(--vscode-editor-background);
-            --cor-texto: var(--vscode-editor-foreground);
-            --cor-borda: var(--vscode-panel-border);
-            --cor-aba-ativa: var(--vscode-tab-activeBackground);
-            --cor-aba-inativa: var(--vscode-tab-inactiveBackground);
-            --cor-destaque: var(--vscode-button-background);
-            --cor-erro: var(--vscode-inputValidation-errorBackground);
-            --cor-sucesso: var(--vscode-testing-iconPassed);
-            --cor-parado: var(--vscode-testing-iconFailed);
+            --bg-deep:    #0B1220;
+            --bg-dark:    #0F172A;
+            --panel:      rgba(255,255,255,0.05);
+            --borda:      rgba(255,255,255,0.08);
+            --cyan:       #00F7FF;
+            --purple:     #7C3AED;
+            --pink:       #FF2DAA;
+            --green:      #00FF88;
+            --muted:      rgba(255,255,255,0.45);
+            --text:       #e2e8f0;
+            --ok:         #00FF88;
+            --erro:       #FF2DAA;
+            --font-mono:  'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
-            background: var(--cor-fundo);
-            color: var(--cor-texto);
-            font-family: var(--vscode-font-family);
-            font-size: var(--vscode-font-size);
+            background: var(--bg-deep);
+            color: var(--text);
+            font-family: 'Inter', system-ui, sans-serif;
+            font-size: 13px;
             padding: 16px;
+            min-height: 100vh;
         }
-        h1 { font-size: 1.2em; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: var(--bg-dark); }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--cyan); }
+
+        h1 { font-size: 1.1em; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; font-weight: 700; letter-spacing: 0.04em; }
         .badge {
-            font-size: 0.7em;
-            padding: 2px 8px;
-            border-radius: 4px;
-            font-weight: bold;
-            text-transform: uppercase;
+            font-size: 0.7em; padding: 2px 8px; border-radius: 4px; font-weight: 700;
+            text-transform: uppercase; letter-spacing: 0.06em; font-family: var(--font-mono);
         }
-        .badge-running { background: var(--cor-sucesso); color: #000; }
-        .badge-stopped { background: var(--cor-parado); color: #fff; }
-        .badge-paused  { background: var(--vscode-testing-iconQueued); color: #000; }
+        .badge-running { background: rgba(0,255,136,0.15); color: var(--ok); border: 1px solid rgba(0,255,136,0.3); }
+        .badge-stopped { background: rgba(255,45,170,0.15); color: var(--erro); border: 1px solid rgba(255,45,170,0.3); }
+        .badge-paused  { background: rgba(245,158,11,0.15); color: #f59e0b; border: 1px solid rgba(245,158,11,0.3); }
 
         /* Abas */
-        .abas { display: flex; gap: 4px; border-bottom: 1px solid var(--cor-borda); margin-bottom: 16px; }
+        .abas { display: flex; gap: 4px; border-bottom: 1px solid var(--borda); margin-bottom: 16px; flex-wrap: wrap; }
         .aba {
-            padding: 6px 14px;
-            cursor: pointer;
-            border: none;
-            background: var(--cor-aba-inativa);
-            color: var(--cor-texto);
-            border-radius: 4px 4px 0 0;
-            font-size: inherit;
+            padding: 6px 14px; cursor: pointer; border: none;
+            background: transparent; color: var(--muted);
+            border-bottom: 2px solid transparent;
+            font-size: 0.82em; font-family: var(--font-mono);
+            text-transform: uppercase; letter-spacing: 0.05em;
+            transition: color 0.15s, border-color 0.15s;
         }
-        .aba.ativa { background: var(--cor-aba-ativa); border-bottom: 2px solid var(--cor-destaque); }
+        .aba:hover { color: var(--cyan); }
+        .aba.ativa { color: var(--cyan); border-bottom-color: var(--cyan); }
         .conteudo-aba { display: none; }
         .conteudo-aba.ativa { display: block; }
 
         /* Tabela de detalhes */
         table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
-        th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--cor-borda); }
-        th { font-weight: 600; width: 30%; color: var(--vscode-descriptionForeground); }
-        td { font-family: var(--vscode-editor-font-family, monospace); word-break: break-all; }
+        th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--borda); }
+        th { font-weight: 600; width: 30%; color: var(--muted); font-size: 0.82em; font-family: var(--font-mono); text-transform: uppercase; }
+        td { font-family: var(--font-mono); word-break: break-all; font-size: 0.85em; }
 
         /* Logs */
         pre {
-            background: var(--vscode-terminal-background, #1e1e1e);
-            color: var(--vscode-terminal-foreground, #d4d4d4);
+            background: var(--bg-dark);
+            color: #c9d1d9;
             padding: 12px;
-            border-radius: 4px;
+            border-radius: 6px;
+            border: 1px solid var(--borda);
             overflow: auto;
             max-height: 500px;
-            font-size: 0.85em;
-            line-height: 1.5;
+            font-size: 0.82em;
+            line-height: 1.6;
             white-space: pre-wrap;
             word-break: break-all;
+            font-family: var(--font-mono);
         }
 
         /* Stats */
         .stats-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
         .stat-card {
-            background: var(--vscode-editorWidget-background);
-            border: 1px solid var(--cor-borda);
-            border-radius: 6px;
-            padding: 12px;
+            background: var(--panel); border: 1px solid var(--borda); border-radius: 8px; padding: 14px;
+            backdrop-filter: blur(6px); transition: border-color 0.2s;
         }
-        .stat-label { font-size: 0.8em; color: var(--vscode-descriptionForeground); margin-bottom: 4px; }
-        .stat-valor { font-size: 1.4em; font-weight: bold; }
+        .stat-card:hover { border-color: var(--cyan); }
+        .stat-label { font-size: 0.75em; color: var(--muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.06em; font-family: var(--font-mono); }
+        .stat-valor { font-size: 1.4em; font-weight: 700; font-family: var(--font-mono); color: var(--cyan); text-shadow: 0 0 10px rgba(0,247,255,0.3); }
 
-        .carregando { color: var(--vscode-descriptionForeground); font-style: italic; }
-        .erro { color: var(--vscode-inputValidation-errorForeground, red); padding: 8px; }
+        .carregando { color: var(--muted); font-style: italic; font-family: var(--font-mono); }
+        .erro { color: var(--erro); padding: 8px; font-family: var(--font-mono); }
 
         /* Botões de ação */
-        .acoes {
-            display: flex;
-            gap: 8px;
-            margin-bottom: 16px;
-            flex-wrap: wrap;
-        }
+        .acoes { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
         .btn {
-            padding: 5px 14px;
-            border: none;
-            border-radius: 3px;
-            cursor: pointer;
-            font-size: 0.85em;
-            font-family: inherit;
-            font-weight: 500;
-            transition: opacity 0.15s;
+            padding: 5px 14px; border: 1px solid transparent; border-radius: 4px;
+            cursor: pointer; font-size: 0.78em; font-family: var(--font-mono);
+            font-weight: 500; text-transform: uppercase; letter-spacing: 0.04em;
+            transition: box-shadow 0.15s, opacity 0.15s;
         }
         .btn:hover { opacity: 0.85; }
-        .btn:disabled { opacity: 0.4; cursor: not-allowed; }
-        .btn-start   { background: var(--vscode-testing-iconPassed, #4caf50); color: #000; }
-        .btn-stop    { background: var(--vscode-testing-iconFailed, #f44336); color: #fff; }
-        .btn-restart { background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
-        .btn-remove  { background: var(--vscode-inputValidation-errorBackground, #5a1d1d); color: var(--vscode-inputValidation-errorForeground, #f48771); border: 1px solid var(--vscode-inputValidation-errorBorder, #f48771); }
-        .notif { padding: 6px 10px; border-radius: 3px; margin-bottom: 10px; display: none; font-size: 0.85em; }
-        .notif.ok  { background: var(--vscode-diffEditor-insertedTextBackground); color: var(--vscode-foreground); display: block; }
-        .notif.err { background: var(--vscode-inputValidation-errorBackground); color: var(--vscode-inputValidation-errorForeground); display: block; }
+        .btn:disabled { opacity: 0.25; cursor: not-allowed; }
+        .btn-start   { background: rgba(0,255,136,0.12); color: var(--ok); border-color: var(--ok); }
+        .btn-start:hover:not(:disabled) { box-shadow: 0 0 10px rgba(0,255,136,0.3); }
+        .btn-stop    { background: rgba(255,45,170,0.12); color: var(--pink); border-color: var(--pink); }
+        .btn-stop:hover:not(:disabled) { box-shadow: 0 0 10px rgba(255,45,170,0.3); }
+        .btn-restart { background: rgba(0,247,255,0.08); color: var(--cyan); border-color: var(--cyan); }
+        .btn-restart:hover:not(:disabled) { box-shadow: 0 0 10px rgba(0,247,255,0.3); }
+        .btn-remove  { background: rgba(255,45,170,0.08); color: var(--pink); border-color: rgba(255,45,170,0.5); }
+        .btn-remove:hover:not(:disabled) { box-shadow: 0 0 10px rgba(255,45,170,0.3); }
+
+        .notif { padding: 6px 10px; border-radius: 4px; margin-bottom: 10px; display: none; font-size: 0.82em; font-family: var(--font-mono); }
+        .notif.ok  { background: rgba(0,255,136,0.1); color: var(--ok); border: 1px solid rgba(0,255,136,0.3); display: block; }
+        .notif.err { background: rgba(255,45,170,0.1); color: var(--pink); border: 1px solid rgba(255,45,170,0.3); display: block; }
 
         /* Toolbar de auto-refresh dos logs */
-        .log-toolbar {
-            display: flex;
-            align-items: center;
-            gap: 14px;
-            margin-bottom: 8px;
-            padding: 4px 0;
-            font-size: 0.85em;
-            color: var(--vscode-descriptionForeground);
-        }
+        .log-toolbar { display: flex; align-items: center; gap: 14px; margin-bottom: 8px; padding: 4px 0; font-size: 0.82em; color: var(--muted); font-family: var(--font-mono); }
         .log-toolbar label { display: flex; align-items: center; gap: 6px; }
         .log-toolbar select {
-            background: var(--vscode-dropdown-background);
-            color: var(--vscode-dropdown-foreground);
-            border: 1px solid var(--vscode-dropdown-border);
-            border-radius: 3px;
-            padding: 2px 6px;
-            font-size: inherit;
-            font-family: inherit;
-            cursor: pointer;
+            background: var(--bg-dark); color: var(--text);
+            border: 1px solid var(--borda); border-radius: 4px;
+            padding: 2px 6px; font-size: inherit; font-family: inherit; cursor: pointer;
         }
+        .log-toolbar select:focus { outline: none; border-color: var(--cyan); }
         .log-status { font-style: italic; }
-        .log-status.ativo { color: var(--vscode-testing-iconPassed, #4caf50); font-style: normal; font-weight: 500; }
+        .log-status.ativo { color: var(--ok); font-style: normal; font-weight: 600; }
 
         /* Gráficos de tempo real */
         .graficos-ao-vivo { margin-top: 20px; }
         .grafico-bloco { margin-bottom: 14px; }
-        .grafico-titulo {
-            font-size: 0.78em;
-            font-weight: 600;
-            color: var(--vscode-descriptionForeground);
-            margin-bottom: 4px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
+        .grafico-titulo { font-size: 0.75em; font-weight: 600; color: var(--muted); margin-bottom: 4px; display: flex; align-items: center; gap: 10px; text-transform: uppercase; letter-spacing: 0.05em; font-family: var(--font-mono); }
         .grafico-legenda { font-weight: normal; font-size: 0.95em; }
         canvas.grafico-canvas {
-            width: 100%;
-            height: 110px;
-            display: block;
-            border-radius: 4px;
-            background: var(--vscode-editorWidget-background, #1e1e1e);
-            border: 1px solid var(--cor-borda);
+            width: 100%; height: 110px; display: block;
+            border-radius: 6px; background: var(--bg-dark); border: 1px solid var(--borda);
         }
 
         /* Inspect (JSON Tree/Text) */
-        .inspect-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin-bottom: 10px;
-        }
-        .inspect-titulo {
-            font-weight: 600;
-            font-size: 1em;
-            color: var(--vscode-descriptionForeground);
-        }
+        .inspect-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+        .inspect-titulo { font-weight: 600; font-size: 0.82em; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; font-family: var(--font-mono); }
         .inspect-toolbar { display: flex; gap: 4px; }
         .btn-inspect-mode {
-            padding: 3px 12px;
-            border: 1px solid var(--cor-borda);
-            background: var(--cor-aba-inativa);
-            color: var(--cor-texto);
-            border-radius: 3px;
-            cursor: pointer;
-            font-size: 0.82em;
-            font-family: inherit;
+            padding: 3px 12px; border: 1px solid var(--borda); background: transparent;
+            color: var(--muted); border-radius: 4px; cursor: pointer;
+            font-size: 0.78em; font-family: var(--font-mono); text-transform: uppercase;
+            transition: color 0.1s, border-color 0.1s;
         }
-        .btn-inspect-mode.ativa {
-            background: var(--cor-aba-ativa);
-            border-color: var(--cor-destaque);
-        }
+        .btn-inspect-mode:hover { color: var(--cyan); border-color: var(--cyan); }
+        .btn-inspect-mode.ativa { color: var(--cyan); border-color: var(--cyan); background: rgba(0,247,255,0.08); }
         .inspect-view {
-            background: var(--vscode-terminal-background, #1e1e1e);
-            color: var(--vscode-terminal-foreground, #d4d4d4);
-            padding: 12px;
-            border-radius: 4px;
-            overflow: auto;
-            max-height: 600px;
-            font-size: 0.85em;
-            line-height: 1.6;
-            font-family: var(--vscode-editor-font-family, monospace);
+            background: var(--bg-dark); color: #c9d1d9; padding: 12px; border-radius: 6px;
+            border: 1px solid var(--borda); overflow: auto; max-height: 600px;
+            font-size: 0.82em; line-height: 1.6; font-family: var(--font-mono);
         }
         pre.inspect-view { white-space: pre; word-break: break-all; }
-        .json-filhos { padding-left: 18px; border-left: 1px solid rgba(128,128,128,0.15); margin-left: 4px; }
+        .json-filhos { padding-left: 18px; border-left: 1px solid rgba(255,255,255,0.06); margin-left: 4px; }
         .json-item { margin: 1px 0; }
-        .json-toggle {
-            display: inline-block;
-            cursor: pointer;
-            width: 14px;
-            color: var(--vscode-descriptionForeground);
-            user-select: none;
-            font-size: 0.75em;
-            vertical-align: middle;
-        }
-        .json-toggle:hover { color: var(--cor-destaque); }
-        .json-chave       { color: #9cdcfe; }
-        .json-str         { color: #ce9178; }
-        .json-num         { color: #b5cea8; }
-        .json-bool        { color: #569cd6; }
-        .json-null        { color: #569cd6; font-style: italic; }
-        .json-bracket     { color: var(--vscode-terminal-foreground, #d4d4d4); }
-        .json-fecha       { color: var(--vscode-terminal-foreground, #d4d4d4); }
-        .json-dois-pontos { color: var(--vscode-terminal-foreground, #d4d4d4); }
-        .json-virgula     { color: var(--vscode-terminal-foreground, #d4d4d4); }
+        .json-toggle { display: inline-block; cursor: pointer; width: 14px; color: var(--muted); user-select: none; font-size: 0.75em; vertical-align: middle; }
+        .json-toggle:hover { color: var(--cyan); }
+        .json-chave       { color: #79c0ff; }
+        .json-str         { color: #a5d6ff; }
+        .json-num         { color: var(--green); }
+        .json-bool        { color: var(--purple); font-weight: bold; }
+        .json-null        { color: var(--muted); font-style: italic; }
+        .json-bracket     { color: var(--text); }
+        .json-fecha       { color: var(--text); }
+        .json-dois-pontos { color: var(--muted); }
+        .json-virgula     { color: var(--muted); }
     </style>
 </head>
 <body>
@@ -1112,7 +1093,8 @@ export class ContainerDetailPanel {
     }
 
     private _destruir(): void {
-        ContainerDetailPanel.paineis.delete(this._item.resourceId);
+        const nome = this._item.containerData?.nome ?? this._item.label as string;
+        ContainerDetailPanel.paineis.delete(`container:${nome}`);
         this._panel.dispose();
         for (const d of this._disposables) d.dispose();
         this._disposables = [];

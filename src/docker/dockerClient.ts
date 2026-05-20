@@ -39,11 +39,17 @@ export class DockerClient {
 
     /**
      * Verifica se o daemon Docker está acessível e em execução.
+     * Usa timeout de 5s para evitar que chamadas pendentes acumulem e travem o processo.
      * @throws {DockerConnectionError} quando o Docker não está disponível
      */
     public async verificarConexao(): Promise<void> {
         try {
-            await this.docker.ping();
+            await Promise.race([
+                this.docker.ping(),
+                new Promise<never>((_, reject) =>
+                    setTimeout(() => reject(new Error('Timeout ao conectar ao Docker (5s)')), 5000),
+                ),
+            ]);
         } catch (err) {
             throw new DockerConnectionError(interpretarErrodocker(err));
         }

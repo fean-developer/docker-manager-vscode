@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { DockerTreeProvider } from './views/dockerTreeProvider';
 import { registrarComandos } from './commands/dockerCommands';
 import { DockerClient } from './docker/dockerClient';
+import { MainPanel } from './webviews/mainPanel';
 
 /**
  * Ponto de entrada da extensão Container Manager.
@@ -27,12 +28,29 @@ export function activate(context: vscode.ExtensionContext): void {
             { viewId: 'dockerManager.networks', provider: networkProvider },
         ];
 
+        let dashboardAberto = false;
         for (const { viewId, provider } of registrations) {
             try {
                 const treeView = vscode.window.createTreeView(viewId, {
                     treeDataProvider: provider,
                     showCollapseAll: true,
                 });
+                // Abre o dashboard e fecha a sidebar ao clicar na ActivityBar
+                // Se o dashboard já está aberto, não faz nada (o usuário está usando a sidebar)
+                treeView.onDidChangeVisibility(e => {
+                    if (e.visible) {
+                        // Se o dashboard foi fechado, permite reabrir
+                        if (!MainPanel.estaAberto()) {
+                            dashboardAberto = false;
+                        }
+                        if (!dashboardAberto) {
+                            dashboardAberto = true;
+                            vscode.commands.executeCommand('dockerManager.openDashboard').then(() => {
+                                vscode.commands.executeCommand('workbench.action.closeSidebar');
+                            });
+                        }
+                    }
+                }, null, context.subscriptions);
                 context.subscriptions.push(treeView);
                 console.log(`Container Manager: TreeView registrada para ${viewId}`);
             } catch (err) {

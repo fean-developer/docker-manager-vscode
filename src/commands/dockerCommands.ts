@@ -107,11 +107,8 @@ export function registrarComandos(
             // Detecta shell disponível no container
             const shell = await detectarShell(item.resourceId, containerSvc);
 
-            const terminal = vscode.window.createTerminal({
-                name: `Docker: ${nome}`,
-                shellPath: '/bin/sh',
-                shellArgs: ['-c', `docker exec -it ${id} ${shell}`],
-            });
+            const terminal = vscode.window.createTerminal(`Docker: ${nome}`);
+            terminal.sendText(`docker exec -it ${id} ${shell}`);
             terminal.show();
         }),
     );
@@ -216,109 +213,72 @@ export function registrarComandos(
         }),
     );
 
-    // ── Dashboard ─────────────────────────────────────────────────────────────
+    // ── Callbacks compartilhados para ações de container ─────────────────────
+    // Detalhe do container é exibido inline no SPA (MainPanel).
+
+    const onAbrirLogs = async (id: string): Promise<void> => {
+        try {
+            const info = await containerSvc.inspecionar(id);
+            const nome = (info.Name ?? id).replace(/^\//, '');
+            const logs = await containerSvc.obterLogs(id);
+            const canal = vscode.window.createOutputChannel(`Docker: ${nome}`);
+            canal.clear();
+            canal.append(logs);
+            canal.show();
+        } catch (err) {
+            vscode.window.showErrorMessage(`Erro ao obter logs: ${mensagemErro(err)}`);
+        }
+    };
+
+    const onAbrirShell = async (id: string): Promise<void> => {
+        try {
+            const info = await containerSvc.inspecionar(id);
+            const nome = (info.Name ?? id).replace(/^\//, '');
+            const idCurto = id.substring(0, 12);
+            const shell = await detectarShell(id, containerSvc);
+            const terminal = vscode.window.createTerminal(`Docker: ${nome}`);
+            terminal.sendText(`docker exec -it ${idCurto} ${shell}`);
+            terminal.show();
+        } catch (err) {
+            vscode.window.showErrorMessage(`Erro ao abrir shell: ${mensagemErro(err)}`);
+        }
+    };
+
+    // ── Painel Principal SPA ──────────────────────────────────────────────────
+    // Todos os "open*" abrem a mesma aba e navegam para a seção correta.
 
     context.subscriptions.push(
         vscode.commands.registerCommand('dockerManager.openDashboard', async () => {
-            const { DashboardPanel } = await import('../webviews/dashboardPanel');
-            DashboardPanel.criar(context.extensionUri);
+            const { MainPanel } = await import('../webviews/mainPanel');
+            MainPanel.criar(context.extensionUri, 'dashboard', context.globalState, onAbrirLogs, onAbrirShell);
         }),
     );
-
-    // ── Lista de Containers (com checkboxes) ──────────────────────────────────
 
     context.subscriptions.push(
         vscode.commands.registerCommand('dockerManager.openContainerList', async () => {
-            const { ContainerListPanel } = await import('../webviews/containerListPanel');
-            const { ContainerDetailPanel } = await import('../webviews/containerDetailPanel');
-
-            ContainerListPanel.criar(
-                context.extensionUri,
-                // Callback: abrir painel de detalhe por ID
-                async (id: string) => {
-                    try {
-                        const info = await containerSvc.inspecionar(id);
-                        const nome = (info.Name ?? id).replace(/^\//, '');
-                        const { DockerTreeItem } = await import('../views/dockerTreeItem');
-                        const estado = (info.State?.Status ?? 'unknown') as 'running' | 'exited' | 'paused' | 'restarting' | 'created' | 'dead' | 'removing';
-                        const item = new DockerTreeItem({
-                            label: nome,
-                            nodeType: 'container-running',
-                            resourceId: id,
-                            containerData: {
-                                id,
-                                nome,
-                                imagem: info.Config?.Image ?? '-',
-                                estado,
-                                status: info.State?.Status ?? '-',
-                                portas: [],
-                                criado: new Date(info.Created),
-                            },
-                        });
-                        ContainerDetailPanel.criar(context.extensionUri, item, containerSvc);
-                    } catch (err) {
-                        vscode.window.showErrorMessage(`Erro ao abrir detalhe: ${mensagemErro(err)}`);
-                    }
-                },
-                // Callback: mostrar logs
-                async (id: string) => {
-                    try {
-                        const info = await containerSvc.inspecionar(id);
-                        const nome = (info.Name ?? id).replace(/^\//, '');
-                        const logs = await containerSvc.obterLogs(id);
-                        const canal = vscode.window.createOutputChannel(`Docker: ${nome}`);
-                        canal.clear();
-                        canal.append(logs);
-                        canal.show();
-                    } catch (err) {
-                        vscode.window.showErrorMessage(`Erro ao obter logs: ${mensagemErro(err)}`);
-                    }
-                },
-                // Callback: abrir shell
-                async (id: string) => {
-                    try {
-                        const info = await containerSvc.inspecionar(id);
-                        const nome = (info.Name ?? id).replace(/^\//, '');
-                        const idCurto = id.substring(0, 12);
-                        const shell = await detectarShell(id, containerSvc);
-                        const terminal = vscode.window.createTerminal({
-                            name: `Docker: ${nome}`,
-                            shellPath: '/bin/sh',
-                            shellArgs: ['-c', `docker exec -it ${idCurto} ${shell}`],
-                        });
-                        terminal.show();
-                    } catch (err) {
-                        vscode.window.showErrorMessage(`Erro ao abrir shell: ${mensagemErro(err)}`);
-                    }
-                },
-            );
+            const { MainPanel } = await import('../webviews/mainPanel');
+            MainPanel.criar(context.extensionUri, 'containers', context.globalState, onAbrirLogs, onAbrirShell);
         }),
     );
-
-    // ── Lista de Imagens (com checkboxes e remoção em lote) ────────────────────
 
     context.subscriptions.push(
         vscode.commands.registerCommand('dockerManager.openImageList', async () => {
-            const { ImageListPanel } = await import('../webviews/imageListPanel');
-            ImageListPanel.criar(context.extensionUri);
+            const { MainPanel } = await import('../webviews/mainPanel');
+            MainPanel.criar(context.extensionUri, 'images', context.globalState, onAbrirLogs, onAbrirShell);
         }),
     );
-
-    // ── Lista de Volumes (com checkboxes e remoção em lote) ────────────────────
 
     context.subscriptions.push(
         vscode.commands.registerCommand('dockerManager.openVolumeList', async () => {
-            const { VolumeListPanel } = await import('../webviews/volumeListPanel');
-            VolumeListPanel.criar(context.extensionUri);
+            const { MainPanel } = await import('../webviews/mainPanel');
+            MainPanel.criar(context.extensionUri, 'volumes', context.globalState, onAbrirLogs, onAbrirShell);
         }),
     );
 
-    // ── Lista de Redes (com checkboxes e remoção em lote) ──────────────────────
-
     context.subscriptions.push(
         vscode.commands.registerCommand('dockerManager.openNetworkList', async () => {
-            const { NetworkListPanel } = await import('../webviews/networkListPanel');
-            NetworkListPanel.criar(context.extensionUri);
+            const { MainPanel } = await import('../webviews/mainPanel');
+            MainPanel.criar(context.extensionUri, 'networks', context.globalState, onAbrirLogs, onAbrirShell);
         }),
     );
 }

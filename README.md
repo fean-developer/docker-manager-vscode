@@ -13,14 +13,16 @@ Gerencie containers, imagens, volumes e redes Docker diretamente na sua IDE, sem
 ## Funcionalidades
 
 - **Dashboard** com resumo do ambiente Docker: versão do Engine, OS, CPUs, memória e contadores de recursos
+- **Abertura automática do Dashboard** ao clicar no ícone da Activity Bar — sem precisar navegar na sidebar
 - **Lista de containers** com checkboxes, ações em lote (Start, Stop, Kill, Restart, Pause, Resume, Remove), busca em tempo real e ordenação por coluna
 - **Sidebar interativa** com árvore de Containers, Imagens, Volumes e Redes
 - **Botões de ação inline** na árvore: Start/Stop/Restart/Remove para containers; Remove para imagens e volumes
 - **Atualização automática** a cada 10 segundos
 - **Gerenciamento de containers**: iniciar, parar, reiniciar, matar (SIGKILL), pausar, retomar e remover
-- **Logs ao vivo** com **auto-atualização configurável** (2s, 5s, 10s, 30s, 1 min) — igual ao Portainer
-- **Terminal integrado** com exec direto no container
-- **Webview de detalhes** com 5 abas: Overview, Logs, Variáveis de Ambiente, Portas e Stats
+- **Logs inline** na aba Geral com **auto-atualização configurável** (2s, 5s, 10s, 30s, 1 min) e atualização sem flicker
+- **Terminal integrado** com exec direto no container (compatível com WSL)
+- **Monitoramento em tempo real via streaming**: gráficos de CPU %, Memória % e Rede RX/TX com rótulos no eixo Y, histórico de 60 pontos a 1s de intervalo
+- **Webview de detalhes** com 5 abas: Geral, Logs, Portas, Variáveis de Ambiente e Inspect JSON
 - **Botões de ação no detalhe**: Start, Stop, Restart e Remover com feedback visual
 - **Remoção em lote** de imagens e volumes com confirmação obrigatória
 
@@ -39,15 +41,19 @@ sudo usermod -aG docker $USER
 # Faça logout e login novamente para aplicar
 ```
 
+---
+
 ## Como usar
 
-Após a instalação, o ícone do Container Manager aparece na barra lateral (Activity Bar).
+Após a instalação, o ícone do Container Manager aparece na Activity Bar (barra lateral esquerda).
 
-![Icon Bar](/assets/image.png)
+![Icon bar](assets/image.png)
+
+> **Dica:** Ao clicar no ícone do Container Manager na Activity Bar, o **Dashboard abre automaticamente** e a sidebar é fechada para maximizar o espaço de trabalho.
 
 ### Dashboard
 
-Clique no ícone `$(dashboard)` na toolbar da sidebar para abrir o **Dashboard**.
+O Dashboard abre automaticamente ao clicar no ícone na Activity Bar.
 
 | Informação | Descrição |
 |---|---|
@@ -93,13 +99,30 @@ Aberto via **Inspecionar Container**, exibe 5 abas:
 
 | Aba | Conteúdo |
 |---|---|
-| Overview | ID, imagem, estado, rede, política de restart, etc. |
-| Logs | Logs do container com **auto-atualização** configurável (Desativado / 2s / 5s / 10s / 30s / 1min) |
-| Variáveis de Ambiente | Todas as env vars do container |
-| Portas | Mapeamento de portas internas → públicas |
-| Stats | CPU %, Memória, Rede RX/TX em tempo real |
+| **Geral** | Informações do container (ID, imagem, estado, rede, política de restart) + **gráficos de monitoramento em tempo real** (CPU %, Memória %, Rede RX/TX) |
+| **Logs** | Logs do container com **auto-atualização** configurável (Desativado / 2s / 5s / 10s / 30s / 1min) sem flicker |
+| **Portas** | Mapeamento de portas internas → públicas |
+| **Variáveis de Ambiente** | Todas as env vars do container |
+| **Inspect JSON** | JSON completo retornado pelo `docker inspect` |
 
-**Botões de ação**: Start, Stop, Restart e Remover — estado dos botões atualizado automaticamente conforme o container.
+
+**Botões de ação**: Start, Stop, Restart e Remover — estado atualizado automaticamente conforme o container.
+
+#### Monitoramento em Tempo Real (aba Geral)
+
+Os gráficos usam **streaming contínuo** da Docker Engine API (`stream: true`), garantindo valores precisos de CPU mesmo no Docker Desktop e WSL2 (sem valores zerados por cache).
+
+| Gráfico | Detalhe |
+|---|---|
+| CPU % | Percentual de uso com base nos ciclos de CPU disponíveis; escala automática |
+| Memória % | Uso real (excluindo page cache); escala automática |
+| Rede RX/TX | Tráfego de entrada e saída com unidade automática (B / KB / MB) |
+
+![monitor](assets/image-3.png)
+
+- Intervalo de atualização: **1 segundo**
+- Histórico exibido: **60 pontos** (último 1 minuto)
+- Rótulos no eixo Y para leitura imediata dos valores
 
 ### Imagens
 
@@ -149,20 +172,25 @@ Esta extensão adota as seguintes medidas de segurança:
 
 ```bash
 # Clone o repositório
-git clone https://github.com/seu-usuario/vscode-docker-manager.git
-cd vscode-docker-manager
+git clone https://github.com/fean-developer/docker-manager-vscode.git
+cd docker-manager-vscode
 
 # Instale as dependências
 npm install
 
-# Compile
-npm run compile
-
-# Inicie no modo watch
-npm run watch
+# Compile (bundle esbuild)
+npm run bundle
 
 # Pressione F5 no VS Code para abrir a Extension Development Host
 ```
+
+Para empacotar e instalar localmente:
+
+```bash
+npx vsce package --no-dependencies
+code --install-extension fean-container-manager-{version}.vsix --force
+```
+
 ---
 
 ## Instalação
@@ -175,8 +203,23 @@ npm run watch
 Ou instale manualmente o `.vsix`:
 
 ```bash
-code --install-extension vscode-docker-manager-{yourVersion}.vsix
+code --install-extension fean-container-manager-{version}.vsix
 ```
+
+---
+
+## Changelog
+
+### v0.1.20
+- Dashboard abre automaticamente ao clicar na Activity Bar; sidebar fecha automaticamente
+- Dashboard reabre ao fechar a aba (não exige clicar novamente na Activity Bar)
+- Monitoramento via streaming contínuo (`stream: true`) — CPU % preciso no Docker Desktop e WSL2
+- Gráficos de CPU, Memória e Rede movidos para a aba **Geral** com rótulos no eixo Y
+- Logs inline na aba **Logs** com auto-refresh configurável sem flicker
+- Terminal (`exec`) compatível com WSL (usa `sendText` em vez de `shellPath`)
+- Intervalo de monitoramento reduzido para 1s; histórico de 60 pontos
+- Aba **Inspect JSON** adicionada na webview de detalhes
+
 ---
 
 ## Licença

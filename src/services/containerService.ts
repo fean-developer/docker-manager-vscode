@@ -165,10 +165,16 @@ export class ContainerService {
     }
 
     /**
-     * Obtém estatísticas de um container (snapshot único).
-     *
-     * No dockerode v4, container.stats({ stream: false }) retorna o objeto de stats
-     * diretamente quando resolvido via Promise — não é um ReadableStream.
+     * Verifica se um container existe pelo ID sem mensagem de erro formatada.
+     * Lança erro puro se não existir — usado para detecção de container recriado.
+     */
+    public async inspecionarPorId(id: string): Promise<Dockerode.ContainerInspectInfo> {
+        const container = this.docker.getContainer(id);
+        return await container.inspect();
+    }
+
+    /**
+     * Obtém um snapshot único de stats (usado pelo ContainerDetailPanel).
      */
     public async obterStats(id: string): Promise<Dockerode.ContainerStats> {
         try {
@@ -177,6 +183,25 @@ export class ContainerService {
         } catch (err) {
             throw new Error(`Erro ao obter stats do container: ${interpretarErrodocker(err)}`);
         }
+    }
+
+    /**
+     * Abre um stream contínuo de stats (stream: true).
+     * O Docker daemon envia um JSON por linha a cada ~1s com dados frescos.
+     * É a única forma confiável de obter CPU real-time no Docker Desktop/WSL2.
+     */
+    public criarStatsStream(id: string): Promise<NodeJS.ReadableStream> {
+        const container = this.docker.getContainer(id);
+        return new Promise((resolve, reject) => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (container.stats as any)({ stream: true }, (err: Error | null, stream: NodeJS.ReadableStream | null) => {
+                if (err || !stream) {
+                    reject(err ?? new Error('Stream de stats indisponível'));
+                    return;
+                }
+                resolve(stream);
+            });
+        });
     }
 
     /**

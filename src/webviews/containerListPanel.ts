@@ -5,7 +5,7 @@ type AcaoBulk = 'start' | 'stop' | 'restart' | 'kill' | 'remove';
 type AcaoRapida = 'inspect' | 'logs' | 'shell';
 
 interface MensagemWebview {
-    command: 'carregar' | 'acaoBulk' | 'acaoRapida';
+    command: 'carregar' | 'acaoBulk' | 'acaoRapida' | 'abrirDashboard' | 'abrirContainers' | 'abrirImagens' | 'abrirVolumes' | 'abrirRedes';
     acao?: AcaoBulk;
     ids?: string[];
     id?: string;
@@ -93,7 +93,20 @@ export class ContainerListPanel {
                         this._executarAcaoRapida(msg.acaoRapida, msg.id);
                     }
                     break;
-                default:
+                case 'abrirDashboard':
+                    await vscode.commands.executeCommand('dockerManager.openDashboard');
+                    break;
+                case 'abrirContainers':
+                    // já está na lista de containers
+                    break;
+                case 'abrirImagens':
+                    await vscode.commands.executeCommand('dockerManager.openImageList');
+                    break;
+                case 'abrirVolumes':
+                    await vscode.commands.executeCommand('dockerManager.openVolumeList');
+                    break;
+                case 'abrirRedes':
+                    await vscode.commands.executeCommand('dockerManager.openNetworkList');
                     break;
             }
         }, null, this._disposables);
@@ -189,30 +202,52 @@ export class ContainerListPanel {
     <title>Docker — Containers</title>
     <style>
         :root {
-            --fundo:    var(--vscode-editor-background);
-            --texto:    var(--vscode-editor-foreground);
-            --borda:    var(--vscode-panel-border);
-            --card-bg:  var(--vscode-editorWidget-background);
-            --desc:     var(--vscode-descriptionForeground);
-            --destaque: var(--vscode-button-background);
-            --hover:    var(--vscode-list-hoverBackground);
-            --sel:      var(--vscode-list-activeSelectionBackground);
-            --ok:       #4caf50;
-            --parado:   #f44336;
-            --paused:   #ff9800;
+            --bg-deep:   #0B1220;
+            --bg-dark:   #0F172A;
+            --panel:     rgba(255,255,255,0.05);
+            --borda:     rgba(255,255,255,0.08);
+            --cyan:      #00F7FF;
+            --purple:    #7C3AED;
+            --pink:      #FF2DAA;
+            --green:     #00FF88;
+            --muted:     rgba(255,255,255,0.45);
+            --text:      #e2e8f0;
+            --ok:        #00FF88;
+            --parado:    #FF2DAA;
+            --paused:    #f59e0b;
+            --hover:     rgba(255,255,255,0.06);
+            --sel:       rgba(0,247,255,0.1);
+            --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
-            background: var(--fundo);
-            color: var(--texto);
-            font-family: var(--vscode-font-family);
-            font-size: var(--vscode-font-size);
-            padding: 16px;
+            background: var(--bg-deep);
+            color: var(--text);
+            font-family: 'Inter', system-ui, sans-serif;
+            font-size: 13px;
+            padding: 0;
+            overflow: hidden;
         }
+        /* Sidebar HUD */
+        .layout { display: flex; width: 100vw; height: 100vh; }
+        .sidebar { width: 200px; min-width: 200px; background: #06101B; border-right: 1px solid rgba(255,255,255,0.06); display: flex; flex-direction: column; overflow-y: auto; flex-shrink: 0; }
+        .sidebar-logo { padding: 18px 16px 16px; border-bottom: 1px solid rgba(255,255,255,0.06); display: flex; align-items: center; gap: 10px; }
+        .logo-icon { font-size: 1.5em; }
+        .logo-text { font-size: 0.68em; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--cyan); font-family: var(--font-mono); line-height: 1.3; text-shadow: 0 0 12px rgba(0,247,255,0.4); }
+        .sidebar-nav { padding: 10px 0; flex: 1; }
+        .nav-item { display: flex; align-items: center; gap: 10px; padding: 9px 16px; cursor: pointer; color: var(--muted); font-size: 0.82em; font-family: var(--font-mono); letter-spacing: 0.03em; transition: color 0.15s, background 0.15s; border-left: 2px solid transparent; user-select: none; }
+        .nav-item:hover { color: var(--text); background: rgba(255,255,255,0.04); }
+        .nav-item.ativo { color: var(--cyan); border-left-color: var(--cyan); background: rgba(0,247,255,0.06); }
+        .nav-icon { font-size: 1em; width: 20px; text-align: center; flex-shrink: 0; }
+        .main-content { flex: 1; overflow-y: auto; padding: 16px; min-width: 0; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: var(--bg-dark); }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--cyan); }
 
         /* Header */
-        .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
-        .header h1 { font-size: 1.2em; }
+        .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--borda); }
+        .header h1 { font-size: 1.1em; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--cyan); text-shadow: 0 0 14px rgba(0,247,255,0.45); }
 
         /* Toolbar de ações */
         .toolbar {
@@ -222,69 +257,83 @@ export class ContainerListPanel {
             flex-wrap: wrap;
             margin-bottom: 12px;
             padding: 8px 10px;
-            background: var(--card-bg);
+            background: var(--panel);
             border: 1px solid var(--borda);
-            border-radius: 4px;
+            border-radius: 6px;
+            backdrop-filter: blur(6px);
         }
         .btn {
             padding: 4px 12px;
             border: 1px solid transparent;
-            border-radius: 3px;
+            border-radius: 4px;
             cursor: pointer;
-            font-size: 0.82em;
-            font-family: inherit;
+            font-size: 0.78em;
+            font-family: var(--font-mono);
             font-weight: 500;
-            transition: opacity 0.15s;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            transition: opacity 0.15s, box-shadow 0.15s;
         }
         .btn:hover { opacity: 0.85; }
-        .btn:disabled { opacity: 0.35; cursor: not-allowed; }
-        .btn-start   { background: var(--ok); color: #000; }
-        .btn-stop    { background: #d32f2f; color: #fff; }
-        .btn-kill    { background: #7b1fa2; color: #fff; }
-        .btn-restart { background: var(--destaque); color: var(--vscode-button-foreground); }
-        .btn-pause   { background: var(--paused); color: #000; }
-        .btn-resume  { background: #1976d2; color: #fff; }
-        .btn-remove  { background: transparent; color: var(--parado); border-color: var(--parado); }
-        .btn-refresh { background: transparent; color: var(--desc); border-color: var(--borda); margin-left: auto; }
-        .sel-count   { font-size: 0.82em; color: var(--desc); padding: 0 6px; }
+        .btn:disabled { opacity: 0.25; cursor: not-allowed; }
+        .btn-start   { background: rgba(0,255,136,0.15); color: var(--ok); border-color: var(--ok); }
+        .btn-start:hover:not(:disabled) { box-shadow: 0 0 10px rgba(0,255,136,0.3); }
+        .btn-stop    { background: rgba(255,45,170,0.15); color: var(--pink); border-color: var(--pink); }
+        .btn-stop:hover:not(:disabled) { box-shadow: 0 0 10px rgba(255,45,170,0.3); }
+        .btn-kill    { background: rgba(124,58,237,0.15); color: #a78bfa; border-color: #7C3AED; }
+        .btn-kill:hover:not(:disabled) { box-shadow: 0 0 10px rgba(124,58,237,0.3); }
+        .btn-restart { background: rgba(0,247,255,0.1); color: var(--cyan); border-color: var(--cyan); }
+        .btn-restart:hover:not(:disabled) { box-shadow: 0 0 10px rgba(0,247,255,0.3); }
+        .btn-pause   { background: rgba(245,158,11,0.15); color: var(--paused); border-color: var(--paused); }
+        .btn-resume  { background: rgba(59,130,246,0.15); color: #60a5fa; border-color: #3b82f6; }
+        .btn-remove  { background: transparent; color: var(--pink); border-color: var(--pink); }
+        .btn-remove:hover:not(:disabled) { box-shadow: 0 0 10px rgba(255,45,170,0.3); }
+        .btn-refresh { background: transparent; color: var(--muted); border-color: var(--borda); margin-left: auto; }
+        .btn-refresh:hover { color: var(--cyan); border-color: var(--cyan); }
+        .sel-count   { font-size: 0.78em; color: var(--muted); padding: 0 6px; font-family: var(--font-mono); }
 
         /* Busca */
         .busca-wrap { margin-bottom: 12px; }
         .busca {
             width: 100%;
             max-width: 400px;
-            background: var(--vscode-input-background);
-            color: var(--vscode-input-foreground);
-            border: 1px solid var(--vscode-input-border, var(--borda));
-            border-radius: 3px;
+            background: var(--panel);
+            color: var(--text);
+            border: 1px solid var(--borda);
+            border-radius: 4px;
             padding: 5px 10px;
-            font-size: 0.9em;
-            font-family: inherit;
+            font-size: 0.88em;
+            font-family: var(--font-mono);
         }
-        .busca::placeholder { color: var(--desc); }
+        .busca::placeholder { color: var(--muted); }
+        .busca:focus { outline: none; border-color: var(--cyan); box-shadow: 0 0 8px rgba(0,247,255,0.2); }
 
         /* Tabela */
         .tabela-wrap { overflow-x: auto; }
         table {
             width: 100%;
             border-collapse: collapse;
-            font-size: 0.85em;
+            font-size: 0.83em;
         }
         thead th {
-            background: var(--card-bg);
-            border-bottom: 2px solid var(--borda);
+            background: var(--bg-dark);
+            border-bottom: 1px solid var(--borda);
             padding: 8px 10px;
             text-align: left;
             font-weight: 600;
-            color: var(--desc);
+            color: var(--muted);
             white-space: nowrap;
             user-select: none;
             cursor: pointer;
+            font-family: var(--font-mono);
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            font-size: 0.75em;
         }
-        thead th:hover { color: var(--texto); }
+        thead th:hover { color: var(--cyan); }
         thead th.no-sort { cursor: default; }
         tbody tr {
-            border-bottom: 1px solid var(--borda);
+            border-bottom: 1px solid rgba(255,255,255,0.04);
             transition: background 0.1s;
         }
         tbody tr:hover { background: var(--hover); }
@@ -292,55 +341,72 @@ export class ContainerListPanel {
         td { padding: 7px 10px; vertical-align: middle; }
 
         /* Checkbox */
-        input[type=checkbox] { cursor: pointer; width: 14px; height: 14px; }
+        input[type=checkbox] { cursor: pointer; width: 14px; height: 14px; accent-color: var(--cyan); }
 
         /* Badge de estado */
         .badge {
             display: inline-block;
             padding: 2px 8px;
-            border-radius: 3px;
-            font-size: 0.78em;
-            font-weight: bold;
-            text-transform: lowercase;
-            letter-spacing: 0.03em;
+            border-radius: 4px;
+            font-size: 0.75em;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            font-family: var(--font-mono);
         }
-        .badge-running  { background: var(--ok);     color: #000; }
-        .badge-exited   { background: var(--parado); color: #fff; }
-        .badge-paused   { background: var(--paused); color: #000; }
-        .badge-created  { background: #607d8b;       color: #fff; }
-        .badge-dead     { background: #424242;       color: #fff; }
-        .badge-restarting { background: #1976d2;     color: #fff; }
+        .badge-running  { background: rgba(0,255,136,0.15); color: var(--ok); border: 1px solid rgba(0,255,136,0.3); }
+        .badge-exited   { background: rgba(255,45,170,0.15); color: var(--pink); border: 1px solid rgba(255,45,170,0.3); }
+        .badge-paused   { background: rgba(245,158,11,0.15); color: var(--paused); border: 1px solid rgba(245,158,11,0.3); }
+        .badge-created  { background: rgba(100,116,139,0.2); color: #94a3b8; border: 1px solid rgba(100,116,139,0.3); }
+        .badge-dead     { background: rgba(66,66,66,0.3); color: #64748b; border: 1px solid rgba(66,66,66,0.4); }
+        .badge-restarting { background: rgba(59,130,246,0.15); color: #60a5fa; border: 1px solid rgba(59,130,246,0.3); }
 
         /* Portas */
-        .portas { font-family: var(--vscode-editor-font-family, monospace); font-size: 0.82em; }
-        .porta-link { color: var(--vscode-textLink-foreground); text-decoration: none; }
-        .porta-link:hover { text-decoration: underline; }
+        .portas { font-family: var(--font-mono); font-size: 0.82em; }
+        .porta-link { color: var(--cyan); text-decoration: none; }
+        .porta-link:hover { text-decoration: underline; text-shadow: 0 0 8px rgba(0,247,255,0.5); }
 
         /* Quick actions */
         .quick-actions { display: flex; gap: 4px; }
         .qa-btn {
             background: transparent;
-            border: none;
-            color: var(--desc);
+            border: 1px solid var(--borda);
+            color: var(--muted);
             cursor: pointer;
-            padding: 2px 5px;
-            border-radius: 3px;
-            font-size: 1em;
+            padding: 3px 7px;
+            border-radius: 4px;
+            font-size: 0.9em;
             line-height: 1;
+            transition: color 0.1s, border-color 0.1s;
         }
-        .qa-btn:hover { background: var(--hover); color: var(--texto); }
+        .qa-btn:hover { border-color: var(--cyan); color: var(--cyan); box-shadow: 0 0 8px rgba(0,247,255,0.2); }
 
-        .nome-link { color: var(--vscode-textLink-foreground); cursor: pointer; text-decoration: none; }
-        .nome-link:hover { text-decoration: underline; }
+        .nome-link { color: var(--cyan); cursor: pointer; text-decoration: none; font-family: var(--font-mono); }
+        .nome-link:hover { text-shadow: 0 0 10px rgba(0,247,255,0.5); text-decoration: underline; }
 
-        .carregando { color: var(--desc); font-style: italic; padding: 20px 0; }
-        .erro-msg { color: var(--parado); padding: 12px; }
-        .vazia { color: var(--desc); padding: 20px; text-align: center; }
+        .carregando { color: var(--muted); font-style: italic; padding: 20px 0; font-family: var(--font-mono); }
+        .erro-msg { color: var(--pink); padding: 12px; font-family: var(--font-mono); }
+        .vazia { color: var(--muted); padding: 20px; text-align: center; font-family: var(--font-mono); }
 
         .sort-arrow { font-size: 0.7em; margin-left: 4px; }
     </style>
 </head>
 <body>
+<div class="layout">
+<aside class="sidebar">
+    <div class="sidebar-logo">
+        <span class="logo-icon">&#128051;</span>
+        <div class="logo-text">Docker<br>Manager</div>
+    </div>
+    <nav class="sidebar-nav">
+        <div class="nav-item" data-cmd="abrirDashboard"><span class="nav-icon">&#128202;</span>Dashboard</div>
+        <div class="nav-item ativo" data-cmd="abrirContainers"><span class="nav-icon">&#128230;</span>Containers</div>
+        <div class="nav-item" data-cmd="abrirImagens"><span class="nav-icon">&#128190;</span>Imagens</div>
+        <div class="nav-item" data-cmd="abrirRedes"><span class="nav-icon">&#128279;</span>Redes</div>
+        <div class="nav-item" data-cmd="abrirVolumes"><span class="nav-icon">&#128452;</span>Volumes</div>
+    </nav>
+</aside>
+<div class="main-content">
     <div class="header">
         <h1>&#128230; Containers</h1>
     </div>
@@ -594,9 +660,17 @@ export class ContainerListPanel {
             vscode.postMessage({ command: 'carregar' });
         }
 
+        // Sidebar navigation
+        document.querySelectorAll('.nav-item[data-cmd]').forEach(function(el) {
+            el.addEventListener('click', function() {
+                vscode.postMessage({ command: el.getAttribute('data-cmd') });
+            });
+        });
+
         // Carrega ao abrir
         carregar();
     </script>
+</div></div>
 </body>
 </html>`;
     }

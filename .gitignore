@@ -3,3 +3,7 @@ out/
 .vscode-test/
 *.vsix
 docs/
+# Act Runner — secrets locais
+.secrets
+.env.local
+.env.production

@@ -28,6 +28,8 @@ export class DockerTreeProvider implements vscode.TreeDataProvider<DockerTreeIte
     private pollingTimer: NodeJS.Timeout | undefined;
     private readonly POLLING_INTERVALO_MS = 10_000;
     private readonly viewType: DockerViewType;
+    // Protege contra sobreposição de refreshes simultâneos (causa de trava após horas)
+    private _refreshEmAndamento = false;
 
     constructor(viewType: DockerViewType) {
         this.viewType = viewType;
@@ -39,8 +41,10 @@ export class DockerTreeProvider implements vscode.TreeDataProvider<DockerTreeIte
 
     /**
      * Dispara um refresh da árvore (re-carrega dados do Docker).
+     * Ignorado se já houver um refresh em andamento para evitar acúmulo de chamadas.
      */
     public refresh(): void {
+        if (this._refreshEmAndamento) return;
         this._onDidChangeTreeData.fire();
     }
 
@@ -81,27 +85,33 @@ export class DockerTreeProvider implements vscode.TreeDataProvider<DockerTreeIte
      * Carrega dados específicos do tipo da view.
      */
     private async carregarDados(): Promise<DockerTreeItem[]> {
+        this._refreshEmAndamento = true;
         try {
             await DockerClient.getInstance().verificarConexao();
         } catch (err) {
+            this._refreshEmAndamento = false;
             const msg = err instanceof DockerConnectionError ? err.message : String(err);
             vscode.window.showErrorMessage(`Container Manager: ${msg}`);
             return [];
         }
 
-        switch (this.viewType) {
-            case 'containers':
-                await this.carregarContainers();
-                break;
-            case 'images':
-                await this.carregarImagens();
-                break;
-            case 'volumes':
-                await this.carregarVolumes();
-                break;
-            case 'networks':
-                await this.carregarRedes();
-                break;
+        try {
+            switch (this.viewType) {
+                case 'containers':
+                    await this.carregarContainers();
+                    break;
+                case 'images':
+                    await this.carregarImagens();
+                    break;
+                case 'volumes':
+                    await this.carregarVolumes();
+                    break;
+                case 'networks':
+                    await this.carregarRedes();
+                    break;
+            }
+        } finally {
+            this._refreshEmAndamento = false;
         }
 
         return this.items;

@@ -61,6 +61,8 @@ export class DashboardPanel {
         this._panel.webview.onDidReceiveMessage(async (msg: { command: string }) => {
             if (msg.command === 'carregar') {
                 await this._enviarDados();
+            } else if (msg.command === 'abrirDashboard') {
+                // já está no dashboard
             } else if (msg.command === 'abrirContainers') {
                 await vscode.commands.executeCommand('dockerManager.openContainerList');
             } else if (msg.command === 'abrirImagens') {
@@ -147,57 +149,106 @@ export class DashboardPanel {
     <title>Docker Dashboard</title>
     <style>
         :root {
-            --fundo:     var(--vscode-editor-background);
-            --texto:     var(--vscode-editor-foreground);
-            --borda:     var(--vscode-panel-border);
-            --card-bg:   var(--vscode-editorWidget-background);
-            --destaque:  var(--vscode-button-background);
-            --desc:      var(--vscode-descriptionForeground);
-            --ok:        #4caf50;
-            --parado:    #f44336;
+            --bg-deep:    #0B1220;
+            --bg-dark:    #0F172A;
+            --panel:      rgba(255,255,255,0.05);
+            --borda:      rgba(255,255,255,0.08);
+            --cyan:       #00F7FF;
+            --purple:     #7C3AED;
+            --pink:       #FF2DAA;
+            --green:      #00FF88;
+            --muted:      rgba(255,255,255,0.45);
+            --text:       #e2e8f0;
+            --ok:         #00FF88;
+            --parado:     #FF2DAA;
+            --font-mono:  'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
-            background: var(--fundo);
-            color: var(--texto);
-            font-family: var(--vscode-font-family);
-            font-size: var(--vscode-font-size);
-            padding: 20px;
+            background: var(--bg-deep);
+            color: var(--text);
+            font-family: 'Inter', system-ui, sans-serif;
+            font-size: 13px;
+            padding: 0;
+            overflow: hidden;
         }
+        /* Sidebar HUD */
+        .layout { display: flex; width: 100vw; height: 100vh; }
+        .sidebar { width: 200px; min-width: 200px; background: #06101B; border-right: 1px solid rgba(255,255,255,0.06); display: flex; flex-direction: column; overflow-y: auto; flex-shrink: 0; }
+        .sidebar-logo { padding: 18px 16px 16px; border-bottom: 1px solid rgba(255,255,255,0.06); display: flex; align-items: center; gap: 10px; }
+        .logo-icon { font-size: 1.5em; }
+        .logo-text { font-size: 0.68em; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--cyan); font-family: var(--font-mono); line-height: 1.3; text-shadow: 0 0 12px rgba(0,247,255,0.4); }
+        .sidebar-nav { padding: 10px 0; flex: 1; }
+        .nav-item { display: flex; align-items: center; gap: 10px; padding: 9px 16px; cursor: pointer; color: var(--muted); font-size: 0.82em; font-family: var(--font-mono); letter-spacing: 0.03em; transition: color 0.15s, background 0.15s; border-left: 2px solid transparent; user-select: none; }
+        .nav-item:hover { color: var(--text); background: rgba(255,255,255,0.04); }
+        .nav-item.ativo { color: var(--cyan); border-left-color: var(--cyan); background: rgba(0,247,255,0.06); }
+        .nav-icon { font-size: 1em; width: 20px; text-align: center; flex-shrink: 0; }
+        .main-content { flex: 1; overflow-y: auto; padding: 20px; min-width: 0; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: var(--bg-dark); }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--cyan); }
 
-        /* Header */
+        /* Header HUD */
         .header {
             display: flex;
             align-items: center;
             justify-content: space-between;
             margin-bottom: 24px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--borda);
         }
-        .header h1 { font-size: 1.3em; display: flex; align-items: center; gap: 8px; }
+        .header h1 {
+            font-size: 1.2em;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--cyan);
+            text-shadow: 0 0 18px rgba(0,247,255,0.5);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
         .btn-refresh {
-            background: var(--vscode-button-background);
-            color: var(--vscode-button-foreground);
-            border: none;
-            border-radius: 3px;
+            background: transparent;
+            color: var(--cyan);
+            border: 1px solid var(--cyan);
+            border-radius: 4px;
             padding: 5px 14px;
             cursor: pointer;
-            font-size: 0.85em;
-            font-family: inherit;
+            font-size: 0.82em;
+            font-family: var(--font-mono);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            transition: background 0.15s, box-shadow 0.15s;
         }
-        .btn-refresh:hover { opacity: 0.85; }
+        .btn-refresh:hover {
+            background: rgba(0,247,255,0.1);
+            box-shadow: 0 0 12px rgba(0,247,255,0.3);
+        }
 
         /* Node Info */
         .node-info {
-            background: var(--card-bg);
+            background: var(--panel);
             border: 1px solid var(--borda);
-            border-radius: 6px;
+            border-radius: 8px;
             padding: 16px 20px;
             margin-bottom: 24px;
+            backdrop-filter: blur(8px);
+            box-shadow: 0 0 24px rgba(0,247,255,0.06);
         }
-        .node-info h2 { font-size: 0.9em; color: var(--desc); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px; }
+        .node-info h2 {
+            font-size: 0.75em;
+            color: var(--cyan);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 12px;
+            font-family: var(--font-mono);
+        }
         .node-table { width: 100%; border-collapse: collapse; }
         .node-table td { padding: 4px 12px 4px 0; vertical-align: top; }
-        .node-table td:first-child { color: var(--desc); width: 160px; font-size: 0.85em; }
-        .node-table td:last-child { font-family: var(--vscode-editor-font-family, monospace); font-size: 0.85em; }
+        .node-table td:first-child { color: var(--muted); width: 160px; font-size: 0.82em; font-family: var(--font-mono); }
+        .node-table td:last-child { font-family: var(--font-mono); font-size: 0.82em; color: var(--text); }
 
         /* Cards de recursos */
         .cards-grid {
@@ -206,42 +257,70 @@ export class DashboardPanel {
             gap: 16px;
         }
         .card {
-            background: var(--card-bg);
+            background: var(--panel);
             border: 1px solid var(--borda);
-            border-radius: 6px;
+            border-radius: 8px;
             padding: 18px 20px;
             display: flex;
             align-items: center;
             gap: 16px;
             cursor: pointer;
-            transition: border-color 0.15s;
+            transition: border-color 0.2s, box-shadow 0.2s, transform 0.15s;
+            backdrop-filter: blur(8px);
         }
-        .card:hover { border-color: var(--destaque); }
+        .card:hover {
+            border-color: var(--cyan);
+            box-shadow: 0 0 20px rgba(0,247,255,0.18);
+            transform: translateY(-2px);
+        }
         .card-icon {
-            font-size: 2.2em;
-            width: 52px;
-            height: 52px;
-            border-radius: 50%;
-            background: var(--destaque);
+            font-size: 1.8em;
+            width: 48px;
+            height: 48px;
+            border-radius: 8px;
+            background: rgba(0,247,255,0.1);
+            border: 1px solid rgba(0,247,255,0.2);
             display: flex;
             align-items: center;
             justify-content: center;
             flex-shrink: 0;
         }
         .card-body { flex: 1; }
-        .card-numero { font-size: 2em; font-weight: bold; line-height: 1; }
-        .card-titulo { font-size: 0.95em; color: var(--desc); margin-top: 2px; }
-        .card-detalhe { font-size: 0.78em; margin-top: 6px; }
+        .card-numero {
+            font-size: 2em;
+            font-weight: 700;
+            line-height: 1;
+            color: var(--cyan);
+            font-family: var(--font-mono);
+            text-shadow: 0 0 12px rgba(0,247,255,0.4);
+        }
+        .card-titulo { font-size: 0.82em; color: var(--muted); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.06em; }
+        .card-detalhe { font-size: 0.75em; margin-top: 6px; font-family: var(--font-mono); }
         .running-txt { color: var(--ok); }
         .stopped-txt { color: var(--parado); }
 
-        .erro { color: var(--parado); padding: 12px; }
-        .carregando { color: var(--desc); font-style: italic; padding: 20px 0; }
+        .erro { color: var(--parado); padding: 12px; font-family: var(--font-mono); }
+        .carregando { color: var(--muted); font-style: italic; padding: 20px 0; font-family: var(--font-mono); }
     </style>
 </head>
 <body>
+<div class="layout">
+<aside class="sidebar">
+    <div class="sidebar-logo">
+        <span class="logo-icon">&#128051;</span>
+        <div class="logo-text">Docker<br>Manager</div>
+    </div>
+    <nav class="sidebar-nav">
+        <div class="nav-item ativo" data-cmd="abrirDashboard"><span class="nav-icon">&#128202;</span>Dashboard</div>
+        <div class="nav-item" data-cmd="abrirContainers"><span class="nav-icon">&#128230;</span>Containers</div>
+        <div class="nav-item" data-cmd="abrirImagens"><span class="nav-icon">&#128190;</span>Imagens</div>
+        <div class="nav-item" data-cmd="abrirRedes"><span class="nav-icon">&#128279;</span>Redes</div>
+        <div class="nav-item" data-cmd="abrirVolumes"><span class="nav-icon">&#128452;</span>Volumes</div>
+    </nav>
+</aside>
+<div class="main-content">
     <div class="header">
-        <h1>&#127959; Docker — Dashboard</h1>
+        <h1>&#127919; Docker &mdash; Dashboard</h1>
         <button class="btn-refresh" id="btn-refresh">&#8635; Atualizar</button>
     </div>
 
@@ -285,7 +364,7 @@ export class DashboardPanel {
 
     <div id="status-carregando" class="carregando">Carregando dados do Docker...</div>
     <div id="erro-msg" class="erro" style="display:none"></div>
-
+</div></div>
     <script nonce="${nonce}">
         const vscode = acquireVsCodeApi();
 
@@ -366,6 +445,13 @@ export class DashboardPanel {
             if (bytes < 1073741824) return (bytes/1048576).toFixed(1) + ' MB';
             return (bytes/1073741824).toFixed(2) + ' GB';
         }
+
+        // Sidebar navigation
+        document.querySelectorAll('.nav-item[data-cmd]').forEach(function(el) {
+            el.addEventListener('click', function() {
+                vscode.postMessage({ command: el.getAttribute('data-cmd') });
+            });
+        });
 
         // Carrega ao abrir
         carregar();

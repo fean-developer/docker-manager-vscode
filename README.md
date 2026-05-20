@@ -63,7 +63,7 @@ O Dashboard abre automaticamente ao clicar no ícone na Activity Bar.
 | Volumes | Quantidade total |
 | Redes | Quantidade total |
 
-![Dashboard](</assets/Screenshot 2026-04-24 173541.png>)
+![Dashboard](/assets/Screenshot 2026-04-24 173541.png)
 
 ### Lista de Containers (visão Portainer)
 

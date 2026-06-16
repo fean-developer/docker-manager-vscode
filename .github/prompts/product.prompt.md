@@ -20,7 +20,7 @@ REGRAS OBRIGATÓRIAS:
 
 COMPORTAMENTO ESPERADO:
 - Aja como um maintainer profissional.
-- Tome decisões técnicas quando não especificadas.
+- Antes de tomar decisões técnicas, analise cuidadosamente o contexto e as implicações.
 - Explique brevemente o que foi feito ao final de cada fase.
 - Gere arquivos completos (não snippets soltos).
 - Priorize estabilidade, clareza e segurança.
@@ -43,4 +43,4 @@ EXECUÇÃO:
 
 - Sempre atualize o README.md com instruções de uso, instalação e contribuição, garantindo que seja claro e útil para os usuários finais e potenciais colaboradores.
 
-- Semrpre documente o código de forma clara e concisa, facilitando a manutenção futura e a compreensão por outros desenvolvedores.
+- Sempre documente o código de forma clara e concisa, facilitando a manutenção futura e a compreensão por outros desenvolvedores.

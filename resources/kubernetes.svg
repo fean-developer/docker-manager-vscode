@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none">
+  <!-- Helm wheel Kubernetes — monocromático para ActivityBar VS Code -->
+  <!-- Círculo central -->
+  <circle cx="24" cy="24" r="5" fill="currentColor"/>
+  <!-- 7 raios com bolhas nas extremidades -->
+  <!-- Raio 0° (topo) -->
+  <line x1="24" y1="19" x2="24" y2="7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="24" cy="5" r="3" fill="currentColor"/>
+  <!-- Raio ~51° -->
+  <line x1="27.2" y1="21.4" x2="36.8" y2="12.6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="38.7" cy="10.8" r="3" fill="currentColor"/>
+  <!-- Raio ~103° -->
+  <line x1="28.9" y1="25.7" x2="41.5" y2="22" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="43.6" cy="21.3" r="3" fill="currentColor"/>
+  <!-- Raio ~154° -->
+  <line x1="26.4" y1="29.2" x2="34" y2="40.2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="35.2" cy="42" r="3" fill="currentColor"/>
+  <!-- Raio ~205° -->
+  <line x1="21.6" y1="29.2" x2="14" y2="40.2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="12.8" cy="42" r="3" fill="currentColor"/>
+  <!-- Raio ~257° -->
+  <line x1="19.1" y1="25.7" x2="6.5" y2="22" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="4.4" cy="21.3" r="3" fill="currentColor"/>
+  <!-- Raio ~308° -->
+  <line x1="20.8" y1="21.4" x2="11.2" y2="12.6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="9.3" cy="10.8" r="3" fill="currentColor"/>
+  <!-- Anel externo (hexágono K8s) -->
+  <circle cx="24" cy="24" r="16" stroke="currentColor" stroke-width="2" fill="none"/>
+</svg>

@@ -4,13 +4,15 @@
 [![Release](https://img.shields.io/github/v/release/fean-developer/docker-manager-vscode?style=flat-square&label=release)](https://flat.badgen.net/github/release/fean-developer/fean-container-manager)
 [![License](https://img.shields.io/github/license/fean-developer/docker-manager-vscode?style=flat-square)](LICENSE)
 
-Gerencie containers, imagens, volumes e redes Docker diretamente na sua IDE, sem precisar sair do VS Code.
+Gerencie containers Docker e clusters Kubernetes diretamente no VS Code — sem sair da sua IDE.
 
 ![Container Manager](/assets/Recording%202026-04-24%20175313.gif)
 
 ---
 
 ## Funcionalidades
+
+### Docker
 
 - **Dashboard** com resumo do ambiente Docker: versão do Engine, OS, CPUs, memória e contadores de recursos
 - **Abertura automática do Dashboard** ao clicar no ícone da Activity Bar — sem precisar navegar na sidebar
@@ -26,7 +28,19 @@ Gerencie containers, imagens, volumes e redes Docker diretamente na sua IDE, sem
 - **Botões de ação no detalhe**: Start, Stop, Restart e Remover com feedback visual
 - **Remoção em lote** de imagens e volumes com confirmação obrigatória
 
+### Kubernetes
+
+- **Painel Kubernetes** com suporte a múltiplos clusters e contextos
+- **Navegação por namespace** com seletor integrado na toolbar
+- **Gerenciamento de Pods**: listar, ver detalhes, deletar com detecção inteligente de Deployment owner
+- **Escalar Deployments e StatefulSets** via Scale subresource (sem rollout acidental)
+- **Rolling restart** seguro via JSON Patch RFC 6902
+- **Monitoramento de Pods** em tempo real (CPU em millicores e RAM em bytes) via Kubelet Stats Summary API — sem dependência do `metrics-server`
+- **Grafo de topologia** interativo com layout hierárquico, nós hexagonais e arestas inferidas por label selectors e env vars
+
 ---
+
+![Container Manager](/assets/k8s.gif)
 
 ## Pré-requisitos
 
@@ -144,6 +158,70 @@ Os gráficos usam **streaming contínuo** da Docker Engine API (`stream: true`),
 
 ---
 
+## Kubernetes
+
+A extensão inclui um painel completo para gerenciamento de clusters Kubernetes, acessível pela aba **Kubernetes** na sidebar.
+
+### Pré-requisitos Kubernetes
+
+- `~/.kube/config` válido com pelo menos um cluster configurado
+- Acesso de leitura/escrita ao cluster (RBAC adequado)
+- Clusters `kind` com `0.0.0.0` são corrigidos automaticamente para `127.0.0.1`
+
+### Recursos suportados
+
+| Recurso | Operações disponíveis |
+|---|---|
+| **Pods** | Listar, ver detalhes, reiniciar, deletar (com detecção de Deployment owner) |
+| **Deployments** | Listar, escalar réplicas, rolling restart, ver status |
+| **StatefulSets** | Listar, escalar réplicas, ver status |
+| **Services** | Listar, ver tipo, porta e ClusterIP |
+| **ConfigMaps** | Listar e ver conteúdo |
+| **Secrets** | Listar (valores ocultados) |
+| **Namespaces** | Listar e filtrar recursos por namespace |
+| **Nodes** | Listar com status e roles |
+| **PersistentVolumeClaims** | Listar com capacidade e status |
+| **DaemonSets** | Listar com status |
+| **Ingresses** | Listar com hosts e regras |
+
+### Múltiplos Clusters
+
+Selecione o contexto ativo e o namespace diretamente nos seletores da toolbar do painel Kubernetes — sem precisar editar o `kubeconfig` manualmente.
+
+### Monitoramento de Pods em Tempo Real
+
+Abra o detalhe de um pod para ver:
+
+- **CPU** em millicores com gráfico histórico (60 pontos a 1s)
+- **RAM** em bytes (workingSet) com gráfico histórico
+- Dados coletados via **Kubelet Stats Summary API** — funciona mesmo sem `metrics-server` instalado
+
+### Escalar Workloads
+
+Use o botão **Escalar** em Deployments ou StatefulSets para definir o número de réplicas. A operação usa a **Scale subresource** da API do Kubernetes, garantindo que apenas `spec.replicas` seja alterado — sem rollout acidental.
+
+### Rolling Restart
+
+O botão **Reiniciar** executa um rolling restart seguro via **JSON Patch RFC 6902**: apenas a annotation `kubectl.kubernetes.io/restartedAt` é alterada. Nenhuma réplica extra é criada.
+
+### Deletar Pods de Deployments
+
+Ao deletar um pod gerenciado por um Deployment, a extensão detecta o `ownerReference` e oferece duas opções:
+
+- **Escalar para N-1 réplicas** — reduz permanentemente a carga
+- **Apenas deletar o pod** — o Kubernetes recriará automaticamente (útil para forçar restart de um pod específico)
+
+### Grafo de Topologia
+
+Clique em **📈 Topologia** na toolbar de Aplicações para visualizar um **diagrama hierárquico** das dependências entre Services, Deployments e StatefulSets no namespace atual.
+
+- Layout esquerda→direita por BFS com minimização de cruzamentos
+- Nós hexagonais com ícone de switch de rede por tipo de recurso
+- Arestas inferidas por label selectors e variáveis de ambiente
+- Interativo: arrastar nós, pan, zoom com scroll, tooltip com detalhes
+
+---
+
 ## Segurança
 
 > **Atenção:** O acesso ao socket Docker é equivalente a acesso root no host.
@@ -205,20 +283,6 @@ Ou instale manualmente o `.vsix`:
 ```bash
 code --install-extension fean-container-manager-{version}.vsix
 ```
-
----
-
-## Changelog
-
-### v0.1.20
-- Dashboard abre automaticamente ao clicar na Activity Bar; sidebar fecha automaticamente
-- Dashboard reabre ao fechar a aba (não exige clicar novamente na Activity Bar)
-- Monitoramento via streaming contínuo (`stream: true`) — CPU % preciso no Docker Desktop e WSL2
-- Gráficos de CPU, Memória e Rede movidos para a aba **Geral** com rótulos no eixo Y
-- Logs inline na aba **Logs** com auto-refresh configurável sem flicker
-- Terminal (`exec`) compatível com WSL (usa `sendText` em vez de `shellPath`)
-- Intervalo de monitoramento reduzido para 1s; histórico de 60 pontos
-- Aba **Inspect JSON** adicionada na webview de detalhes
 
 ---
 

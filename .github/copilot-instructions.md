@@ -121,3 +121,9 @@ When in doubt:
 You are building a **real developer tool**, not an example.
 
 Everyway, independent of the task, the code must be production-ready, secure, and maintainable. Use Portuguese language for comunication and comments, as the target audience is Brazilian developers.
+
+Test your code as if you were the end user, ensuring it meets all requirements and handles all edge cases.
+If possible and relevant, include unit tests or integration tests to validate functionality.
+See all logs and outputs as if you were the user, ensuring they are clear and actionable.
+
+Never say that is done until you have verified that the extension works as expected in a real VS Code environment with a real Docker setup.

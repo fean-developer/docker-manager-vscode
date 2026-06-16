@@ -590,7 +590,6 @@ export class ContainerListPanel {
                     '<td style="font-family:monospace;font-size:0.82em">' + esc(c.ip || '-') + '</td>' +
                     '<td class="portas">' + (portas || '-') + '</td>' +
                     '<td><div class="quick-actions">' +
-                        '<button class="qa-btn" data-id="' + esc(c.id) + '" data-acao-rapida="logs"    title="Ver Logs">&#128196;</button>' +
                         '<button class="qa-btn" data-id="' + esc(c.id) + '" data-acao-rapida="inspect" title="Inspecionar">&#128269;</button>' +
                         (c.estado === 'running' ? '<button class="qa-btn" data-id="' + esc(c.id) + '" data-acao-rapida="shell" title="Terminal">&#9166;</button>' : '') +
                     '</div></td>' +

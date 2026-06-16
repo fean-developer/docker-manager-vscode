@@ -3,6 +3,8 @@ import { DockerTreeProvider } from './views/dockerTreeProvider';
 import { registrarComandos } from './commands/dockerCommands';
 import { DockerClient } from './docker/dockerClient';
 import { MainPanel } from './webviews/mainPanel';
+import { KubernetesClient } from './kubernetes/kubernetesClient';
+import { registrarComandosKubernetes } from './commands/kubernetesCommands';
 
 /**
  * Ponto de entrada da extensão Container Manager.
@@ -115,12 +117,54 @@ export function activate(context: vscode.ExtensionContext): void {
             console.error(`Container Manager: Erro ao instanciar DockerClient: ${msg}`);
             // Não quebra a ativação se DockerClient falhar
         }
+
+        // Inicializa Kubernetes — em try/catch independente para nunca bloquear Docker
+        inicializarKubernetes(context);
     } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.error('Container Manager: ERRO CRÍTICO NA ATIVAÇÃO:', msg);
         vscode.window.showErrorMessage(
             `Container Manager: Erro crítico na inicialização: ${msg}`,
         );
+    }
+}
+
+/**
+ * Inicializa o gerenciamento Kubernetes de forma isolada.
+ * Qualquer falha aqui não afeta o Docker Manager.
+ */
+function inicializarKubernetes(context: vscode.ExtensionContext): void {
+    try {
+        const client = KubernetesClient.getInstance();
+        if (!client.verificarKubeconfig()) {
+            console.log('Container Manager: kubeconfig não encontrado — Kubernetes Manager desabilitado.');
+            return;
+        }
+
+        client.carregar();
+        console.log('Container Manager: kubeconfig carregado.');
+
+        // UI gerenciada pelo painel SPA — registra apenas os comandos
+        registrarComandosKubernetes(context, () => { /* sem TreeView para atualizar */ });
+        console.log('Container Manager: Comandos Kubernetes registrados.');
+
+        // Alerta se o cluster ativo não for local
+        client.verificarConexao().then(() => {
+            if (!client.eClusterLocal()) {
+                vscode.window.showWarningMessage(
+                    `Kubernetes Manager: cluster remoto detectado (${client.getServidorAtivo()}). ` +
+                    'Operações destrutivas afetarão o cluster remoto.',
+                );
+            }
+            console.log(`Container Manager: Kubernetes conectado — contexto "${client.getContextoAtivo()}".`);
+        }).catch(err => {
+            const msg = err instanceof Error ? err.message : String(err);
+            console.warn(`Container Manager: Kubernetes sem conexão — ${msg}`);
+        });
+    } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`Container Manager: Kubernetes Manager não inicializado: ${msg}`);
+        // Não propaga — Docker continua funcionando
     }
 }
 

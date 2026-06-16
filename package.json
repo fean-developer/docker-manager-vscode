@@ -2,7 +2,7 @@
   "name": "fean-container-manager",
   "displayName": "Container Manager",
   "description": "Gerencie containers, imagens, volumes e redes Docker diretamente no VS Code.",
-  "version": "0.1.20",
+  "version": "1.0.0",
   "publisher": "fean-developer",
   "repository": {
     "type": "git",
@@ -43,7 +43,20 @@
     "onCommand:dockerManager.openContainerList",
     "onCommand:dockerManager.openImageList",
     "onCommand:dockerManager.openVolumeList",
-    "onCommand:dockerManager.openNetworkList"
+    "onCommand:dockerManager.openNetworkList",
+    "onCommand:kubernetesManager.refresh",
+    "onCommand:kubernetesManager.selectContext",
+    "onCommand:kubernetesManager.selectNamespace",
+    "onCommand:kubernetesManager.podLogs",
+    "onCommand:kubernetesManager.podExec",
+    "onCommand:kubernetesManager.deletePod",
+    "onCommand:kubernetesManager.scaleDeployment",
+    "onCommand:kubernetesManager.restartDeployment",
+    "onCommand:kubernetesManager.deleteDeployment",
+    "onCommand:kubernetesManager.scaleStatefulSet",
+    "onCommand:kubernetesManager.deleteStatefulSet",
+    "onCommand:kubernetesManager.deleteDaemonSet",
+    "onCommand:kubernetesManager.deletePvc"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -178,10 +191,109 @@
         "title": "Lista de Redes",
         "icon": "$(plug)",
         "category": "Container Manager"
+      },
+      {
+        "command": "kubernetesManager.selectContext",
+        "title": "Selecionar Contexto",
+        "icon": "$(arrow-swap)",
+        "category": "Kubernetes Manager"
+      },
+      {
+        "command": "kubernetesManager.selectNamespace",
+        "title": "Selecionar Namespace",
+        "icon": "$(filter)",
+        "category": "Kubernetes Manager"
+      },
+      {
+        "command": "kubernetesManager.refresh",
+        "title": "Atualizar",
+        "icon": "$(refresh)",
+        "category": "Kubernetes Manager"
+      },
+      {
+        "command": "kubernetesManager.openKubernetesDashboard",
+        "title": "Abrir Painel Kubernetes",
+        "icon": "$(dashboard)",
+        "category": "Kubernetes Manager"
+      },
+      {
+        "command": "kubernetesManager.podLogs",
+        "title": "Ver Logs do Pod",
+        "icon": "$(output)",
+        "category": "Kubernetes Manager"
+      },
+      {
+        "command": "kubernetesManager.podExec",
+        "title": "Abrir Terminal no Pod",
+        "icon": "$(terminal)",
+        "category": "Kubernetes Manager"
+      },
+      {
+        "command": "kubernetesManager.deletePod",
+        "title": "Deletar Pod",
+        "icon": "$(trash)",
+        "category": "Kubernetes Manager"
+      },
+      {
+        "command": "kubernetesManager.scaleDeployment",
+        "title": "Escalar Deployment",
+        "icon": "$(symbol-numeric)",
+        "category": "Kubernetes Manager"
+      },
+      {
+        "command": "kubernetesManager.restartDeployment",
+        "title": "Reiniciar Rollout",
+        "icon": "$(debug-restart)",
+        "category": "Kubernetes Manager"
+      },
+      {
+        "command": "kubernetesManager.deleteDeployment",
+        "title": "Deletar Deployment",
+        "icon": "$(trash)",
+        "category": "Kubernetes Manager"
+      },
+      {
+        "command": "kubernetesManager.scaleStatefulSet",
+        "title": "Escalar StatefulSet",
+        "icon": "$(symbol-numeric)",
+        "category": "Kubernetes Manager"
+      },
+      {
+        "command": "kubernetesManager.deleteStatefulSet",
+        "title": "Deletar StatefulSet",
+        "icon": "$(trash)",
+        "category": "Kubernetes Manager"
+      },
+      {
+        "command": "kubernetesManager.deleteDaemonSet",
+        "title": "Deletar DaemonSet",
+        "icon": "$(trash)",
+        "category": "Kubernetes Manager"
+      },
+      {
+        "command": "kubernetesManager.deletePvc",
+        "title": "Deletar PVC",
+        "icon": "$(trash)",
+        "category": "Kubernetes Manager"
       }
     ],
     "menus": {
       "view/title": [
+        {
+          "command": "kubernetesManager.refresh",
+          "when": "view =~ /^kubernetesManager\\./",
+          "group": "navigation@1"
+        },
+        {
+          "command": "kubernetesManager.selectContext",
+          "when": "view =~ /^kubernetesManager\\./",
+          "group": "navigation@2"
+        },
+        {
+          "command": "kubernetesManager.selectNamespace",
+          "when": "view =~ /^kubernetesManager\\./",
+          "group": "navigation@3"
+        },
         {
           "command": "dockerManager.openDashboard",
           "when": "view =~ /^dockerManager\\./",
@@ -331,6 +443,7 @@
     "typescript": "^5.3.0"
   },
   "dependencies": {
+    "@kubernetes/client-node": "^1.4.0",
     "@types/dockerode": "^3.3.0",
     "dockerode": "^4.0.10"
   },

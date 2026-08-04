@@ -184,6 +184,14 @@ A extensão inclui um painel completo para gerenciamento de clusters Kubernetes,
 | **DaemonSets** | Listar com status |
 | **Ingresses** | Listar com hosts e regras |
 
+
+### Manifest dos recursos
+
+Visualização de manifests dos recursos.
+
+![Manifest](/assets/manifest.png)
+---
+
 ### Múltiplos Clusters
 
 Selecione o contexto ativo e o namespace diretamente nos seletores da toolbar do painel Kubernetes — sem precisar editar o `kubeconfig` manualmente.
@@ -218,8 +226,12 @@ Clique em **📈 Topologia** na toolbar de Aplicações para visualizar um **dia
 - Layout esquerda→direita por BFS com minimização de cruzamentos
 - Nós hexagonais com ícone de switch de rede por tipo de recurso
 - Arestas inferidas por label selectors e variáveis de ambiente
-- Interativo: arrastar nós, pan, zoom com scroll, tooltip com detalhes
+- Interativo: arrastar nós, pan, zoom com scroll, tooltip com detalhes, ações com menu de contexto
 
+
+ Visualizar topologia kubernetes por Namespace
+
+ ![Toplogia](/assets/topologia.png)
 ---
 
 ## Segurança
@@ -246,43 +258,12 @@ Esta extensão adota as seguintes medidas de segurança:
 
 ---
 
-## Desenvolvimento
-
-```bash
-# Clone o repositório
-git clone https://github.com/fean-developer/docker-manager-vscode.git
-cd docker-manager-vscode
-
-# Instale as dependências
-npm install
-
-# Compile (bundle esbuild)
-npm run bundle
-
-# Pressione F5 no VS Code para abrir a Extension Development Host
-```
-
-Para empacotar e instalar localmente:
-
-```bash
-npx vsce package --no-dependencies
-code --install-extension fean-container-manager-{version}.vsix --force
-```
-
----
-
 ## Instalação
 
 1. Abra o VS Code
 2. Vá em Extensions (`Ctrl+Shift+X`)
 3. Busque por **Container Manager**
 4. Clique em **Install**
-
-Ou instale manualmente o `.vsix`:
-
-```bash
-code --install-extension fean-container-manager-{version}.vsix
-```
 
 ---
 

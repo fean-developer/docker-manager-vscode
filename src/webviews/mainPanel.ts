@@ -1157,6 +1157,18 @@ export class MainPanel {
                 case 'pod-shell':
                     await podSvc.exec(msg.namespace!, msg.nome!);
                     return;
+
+                case 'pod-restart': {
+                    const confirmar = await vscode.window.showWarningMessage(
+                        `Reiniciar pod "${msg.nome}"?\n\nO restart de pod é feito via deleção controlada, para que o Kubernetes crie um novo pod substituto.`,
+                        { modal: true },
+                        'Reiniciar',
+                    );
+                    if (confirmar !== 'Reiniciar') { return; }
+                    await podSvc.deletar(msg.namespace!, msg.nome!);
+                    vscode.window.showInformationMessage(`Restart do pod "${msg.nome}" solicitado.`);
+                    break;
+                }
             }
             // Recarrega imediatamente para refletir o estado pós-ação
             await this._carregarSecaoKubernetes();
@@ -2294,7 +2306,7 @@ ${CSS_K8S}
 <!-- ══ OVERLAY TOPOLOGIA ══════════════════════════════════════════ -->
 <div id="topo-overlay" style="display:none;position:fixed;inset:0;background:rgba(4,8,16,0.92);z-index:9998;flex-direction:column">
     <div style="display:flex;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid rgba(255,255,255,0.08);flex-shrink:0">
-        <span style="font-size:1.05em;font-weight:700;color:#A78BFA">&#128200; Topologia de Servi&#231;os</span>
+        <span style="font-size:1.05em;font-weight:700;color:#A78BFA">&#128200; Topologia </span>
         <span id="topo-ns-label" style="font-size:0.78em;color:var(--muted);font-family:var(--font-mono)"></span>
         <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
             <span id="topo-legenda" style="font-size:0.72em;color:var(--muted);display:flex;gap:12px;align-items:center">
@@ -2312,6 +2324,11 @@ ${CSS_K8S}
     <div style="flex:1;position:relative;overflow:hidden">
         <canvas id="topo-canvas" style="width:100%;height:100%;display:block"></canvas>
         <div id="topo-tooltip" style="display:none;position:absolute;background:#0d1b2e;border:1px solid rgba(167,139,250,0.4);border-radius:8px;padding:10px 14px;font-size:0.78em;pointer-events:none;max-width:260px;z-index:1"></div>
+        <div id="topo-context-menu" style="display:none;position:absolute;min-width:220px;background:rgba(8,14,24,0.98);border:1px solid rgba(167,139,250,0.45);border-radius:10px;box-shadow:0 14px 44px rgba(0,0,0,0.5);z-index:4;padding:8px">
+            <div id="topo-context-title" style="font-size:0.74em;color:var(--muted);padding:2px 6px 8px 6px;border-bottom:1px solid rgba(255,255,255,0.08);margin-bottom:6px">Ações</div>
+            <button id="topo-ctx-action-1" style="width:100%;text-align:left;border:1px solid rgba(255,255,255,0.08);background:#10223b;color:#E2E8F0;border-radius:8px;padding:7px 10px;font-size:0.82em;cursor:pointer;margin-bottom:6px;display:none"></button>
+            <button id="topo-ctx-action-2" style="width:100%;text-align:left;border:1px solid rgba(255,255,255,0.08);background:#10223b;color:#E2E8F0;border-radius:8px;padding:7px 10px;font-size:0.82em;cursor:pointer;display:none"></button>
+        </div>
         <div id="topo-loading" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:0.9em">Carregando topologia...</div>
         <div id="topo-vazio" style="display:none;position:absolute;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;gap:12px;color:var(--muted)">
             <div style="font-size:2em">&#128202;</div>
@@ -3854,26 +3871,52 @@ function mDesenharNet(id, ptRx, ptTx) {
     var _drag = null, _panStart = null;
     var _pan = { x: 0, y: 0 }, _zoom = 1;
     var _hoverId = null;
+    var _namespaceTopo = 'default';
+    var _ctxNodeId = null;
     var _W = 0, _H = 0;
 
-    // Paleta por tipo de nó
-    var COR  = { ingress:'#f59e0b', service:'#00d4d4', pod:'#38bdf8', node:'#94a3b8', deployment:'#9333ea', statefulset:'#22c55e', daemonset:'#ef4444', external:'#64748b' };
-    var FILL = { ingress:'rgba(245,158,11,0.12)', service:'rgba(0,212,212,0.12)', pod:'rgba(56,189,248,0.12)', node:'rgba(148,163,184,0.12)', deployment:'rgba(147,51,234,0.12)', statefulset:'rgba(34,197,94,0.12)', daemonset:'rgba(239,68,68,0.12)', external:'rgba(100,116,139,0.10)' };
+    var CARD_W = 230;
+    var CARD_H = 108;
 
-    var HEX_R = 30;          // raio do hexágono
-    var STEP_X = 200;        // espaçamento horizontal entre camadas
-    var STEP_Y = 88;         // espaçamento vertical entre nós na mesma camada
+    var COR  = { ingress:'#f59e0b', service:'#00d4d4', pod:'#38bdf8', node:'#94a3b8', deployment:'#9333ea', statefulset:'#22c55e', daemonset:'#ef4444', external:'#64748b' };
+    var FILL = { ingress:'rgba(245,158,11,0.10)', service:'rgba(0,212,212,0.10)', pod:'rgba(56,189,248,0.10)', node:'rgba(148,163,184,0.10)', deployment:'rgba(147,51,234,0.10)', statefulset:'rgba(34,197,94,0.10)', daemonset:'rgba(239,68,68,0.10)', external:'rgba(100,116,139,0.10)' };
+
+    function limparCanvasTopologia() {
+        var canvas = document.getElementById('topo-canvas');
+        if (!canvas) return;
+        _nodes = [];
+        _edges = [];
+        _pos = {};
+        _hoverId = null;
+        _drag = null;
+        _panStart = null;
+        _W = canvas.offsetWidth || _W || 900;
+        _H = canvas.offsetHeight || _H || 560;
+        var dpr = window.devicePixelRatio || 1;
+        canvas.width = _W * dpr;
+        canvas.height = _H * dpr;
+        var ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        ctx.save();
+        ctx.scale(dpr, dpr);
+        ctx.fillStyle = '#06101b';
+        ctx.fillRect(0, 0, _W, _H);
+        ctx.restore();
+    }
 
     // ── Abrir / fechar ────────────────────────────────────────────────────
     function abrir() {
         var ov = document.getElementById('topo-overlay');
         ov.style.display = 'flex';
+        fecharMenuContexto();
+        limparCanvasTopologia();
         document.getElementById('topo-loading').style.display = 'flex';
         document.getElementById('topo-loading').textContent = 'Carregando topologia...';
         document.getElementById('topo-vazio').style.display = 'none';
         vscode.postMessage({ command: 'k8sTopologia' });
     }
     function fechar() {
+        fecharMenuContexto();
         document.getElementById('topo-overlay').style.display = 'none';
     }
     document.getElementById('topo-fechar').addEventListener('click', fechar);
@@ -3890,9 +3933,15 @@ function mDesenharNet(id, ptRx, ptTx) {
             var el = document.getElementById('topo-loading');
             el.style.display = 'flex'; el.textContent = 'Erro: ' + msg.erro; return;
         }
+        _namespaceTopo = msg.namespace || 'default';
         document.getElementById('topo-ns-label').textContent = 'namespace: ' + (msg.namespace || '');
         _nodes = msg.nodes || []; _edges = msg.edges || [];
-        if (!_nodes.length) { document.getElementById('topo-vazio').style.display = 'flex'; return; }
+        if (!_nodes.length) {
+            limparCanvasTopologia();
+            document.getElementById('topo-vazio').style.display = 'flex';
+            return;
+        }
+        document.getElementById('topo-vazio').style.display = 'none';
         var canvas = document.getElementById('topo-canvas');
         _W = canvas.offsetWidth || 900;
         _H = canvas.offsetHeight || 560;
@@ -3901,22 +3950,29 @@ function mDesenharNet(id, ptRx, ptTx) {
         canvas.height = _H * dpr;
         _pan = { x: 0, y: 0 }; _zoom = 1; _hoverId = null;
         _pos = calcularLayout(_nodes, _edges, _W, _H);
+        aplicarVisaoInicial();
         desenhar(canvas);
         bindEventos(canvas);
     });
 
-    // ── Layout arquitetural vertical em camadas fixas ──────────────────────
+    // ── Layout em colunas (estilo compose topology) ───────────────────────
     function calcularLayout(nodes, edges, W, H) {
         if (!nodes.length) return {};
 
         var nodeById = {};
-        var pred = {};
-        nodes.forEach(function(n) { nodeById[n.id] = n; pred[n.id] = []; });
+        var outAdj = {};
+        var inAdj = {};
+        nodes.forEach(function(n) {
+            nodeById[n.id] = n;
+            outAdj[n.id] = [];
+            inAdj[n.id] = [];
+        });
         edges.forEach(function(e) {
-            if (pred[e.to])   { if (pred[e.to].indexOf(e.from) < 0) pred[e.to].push(e.from); }
+            if (outAdj[e.from]) outAdj[e.from].push(e.to);
+            if (inAdj[e.to]) inAdj[e.to].push(e.from);
         });
 
-        function rankTipo(tipo) {
+        function rank(tipo) {
             if (tipo === 'node') return 0;
             if (tipo === 'pod') return 1;
             if (tipo === 'deployment' || tipo === 'statefulset' || tipo === 'daemonset') return 2;
@@ -3936,87 +3992,162 @@ function mDesenharNet(id, ptRx, ptTx) {
             return 7;
         }
 
-        var byRank = {};
-        nodes.forEach(function(n) {
-            var rank = rankTipo(n.tipo);
-            if (!byRank[rank]) byRank[rank] = [];
-            byRank[rank].push(n.id);
-        });
+        function sortByTipoNome(arr) {
+            arr.sort(function(a, b) {
+                var pa = pesoTipo(a.tipo), pb = pesoTipo(b.tipo);
+                if (pa !== pb) return pa - pb;
+                return a.label.localeCompare(b.label);
+            });
+        }
 
-        var activeRanks = Object.keys(byRank).map(function(v) { return Number(v); }).sort(function(a, b) { return a - b; });
-        var order = {};
-        activeRanks.forEach(function(rank, rankIndex) {
-            var column = byRank[rank];
-            column.sort(function(a, b) {
-                function predecessorAverage(id) {
-                    var predecessors = pred[id].filter(function(predId) { return order[predId] !== undefined; });
-                    if (!predecessors.length) return Number.MAX_SAFE_INTEGER;
-                    return predecessors.reduce(function(total, predId) { return total + order[predId]; }, 0) / predecessors.length;
+        var clusterSeeds = nodes.filter(function(n) { return n.tipo === 'node'; });
+        sortByTipoNome(clusterSeeds);
+
+        var usados = new Set();
+        var clusters = [];
+
+        function construirCluster(seedId) {
+            var fila = [seedId];
+            var seen = new Set([seedId]);
+            while (fila.length) {
+                var cur = fila.shift();
+                var filhos = outAdj[cur] || [];
+                for (var i = 0; i < filhos.length; i++) {
+                    var nx = filhos[i];
+                    if (seen.has(nx)) continue;
+                    seen.add(nx);
+                    fila.push(nx);
                 }
-                var avgA = predecessorAverage(a);
-                var avgB = predecessorAverage(b);
-                if (avgA !== avgB) return avgA - avgB;
-                var tipoDiff = pesoTipo(nodeById[a].tipo) - pesoTipo(nodeById[b].tipo);
-                if (tipoDiff !== 0) return tipoDiff;
-                return nodeById[a].label.localeCompare(nodeById[b].label);
-            });
-            column.forEach(function(id, idx) { order[id] = rankIndex * 1000 + idx; });
-        });
+            }
+            return Array.from(seen).map(function(id) { return nodeById[id]; }).filter(Boolean);
+        }
 
-        var layerGap = 150;
-        var itemGap = 165;
-        var maxItemsPerLayer = activeRanks.reduce(function(max, rank) { return Math.max(max, byRank[rank].length); }, 1);
-        var rawW = Math.max(1, (maxItemsPerLayer - 1) * itemGap);
-        var rawH = Math.max(1, (activeRanks.length - 1) * layerGap);
-        var fit = Math.min(1, (W - 170) / rawW, (H - 150) / rawH);
-        fit = Math.max(0.50, fit);
-        var xGap = itemGap * fit;
-        var yGap = layerGap * fit;
+        for (var i = 0; i < clusterSeeds.length; i++) {
+            var seed = clusterSeeds[i];
+            if (usados.has(seed.id)) continue;
+            var grupo = construirCluster(seed.id);
+            grupo.forEach(function(n) { usados.add(n.id); });
+            clusters.push(grupo);
+        }
+
+        // Nós sem node associado viram cluster próprio para não sumirem
+        var avulsos = nodes.filter(function(n) { return !usados.has(n.id); });
+        if (avulsos.length) {
+            var byComp = [];
+            var seenAv = new Set();
+            for (var j = 0; j < avulsos.length; j++) {
+                var start = avulsos[j];
+                if (seenAv.has(start.id)) continue;
+                var q = [start.id];
+                var comp = new Set([start.id]);
+                seenAv.add(start.id);
+                while (q.length) {
+                    var cur2 = q.shift();
+                    var viz = (outAdj[cur2] || []).concat(inAdj[cur2] || []);
+                    for (var k = 0; k < viz.length; k++) {
+                        var nb = viz[k];
+                        if (!nodeById[nb] || usados.has(nb) || seenAv.has(nb)) continue;
+                        seenAv.add(nb); comp.add(nb); q.push(nb);
+                    }
+                }
+                byComp.push(Array.from(comp).map(function(id) { return nodeById[id]; }).filter(Boolean));
+            }
+            byComp.forEach(function(c) { clusters.push(c); });
+        }
+
         var pos = {};
+        var clusterGapX = 260;
+        var clusterGapY = 260;
+        var colGap = 285;
+        var rowGap = 130;
+        var clusterPerRow = Math.max(1, Math.floor((W - 160) / 680));
 
-        activeRanks.forEach(function(rank, layerIndex) {
-            var layer = byRank[rank];
-            var layerWidth = (layer.length - 1) * xGap;
-            layer.forEach(function(id, itemIndex) {
-                pos[id] = { x: -layerWidth / 2 + itemIndex * xGap, y: layerIndex * yGap };
+        function layoutCluster(clusterNodes, baseX, baseY) {
+            var ranks = {};
+            clusterNodes.forEach(function(n) {
+                var r = rank(n.tipo);
+                if (!ranks[r]) ranks[r] = [];
+                ranks[r].push(n);
             });
-        });
 
-        if (!Object.keys(pos).length) return pos;
+            Object.keys(ranks).forEach(function(rk) { sortByTipoNome(ranks[Number(rk)]); });
+            var keys = Object.keys(ranks).map(function(v) { return Number(v); }).sort(function(a, b) { return a - b; });
 
-        var xs = Object.values(pos).map(function(p) { return p.x; });
-        var ys = Object.values(pos).map(function(p) { return p.y; });
-        var minX = Math.min.apply(null, xs), maxX = Math.max.apply(null, xs);
-        var minY = Math.min.apply(null, ys), maxY = Math.max.apply(null, ys);
-        var graphW = Math.max(1, maxX - minX);
-        var graphH = Math.max(1, maxY - minY);
-        var fit = Math.min(1, (W - 150) / graphW, (H - 150) / graphH);
-        fit = Math.max(0.52, fit);
+            var maxRows = keys.reduce(function(mx, rk) { return Math.max(mx, ranks[rk].length); }, 1);
+            var clusterHeight = Math.max(CARD_H, (maxRows - 1) * rowGap + CARD_H);
 
-        Object.keys(pos).forEach(function(id) {
-            pos[id].x = (pos[id].x - minX) * fit;
-            pos[id].y = (pos[id].y - minY) * fit;
-        });
+            keys.forEach(function(rk) {
+                var lane = ranks[rk];
+                var laneHeight = Math.max(CARD_H, (lane.length - 1) * rowGap + CARD_H);
+                var startY = baseY + Math.max(0, (clusterHeight - laneHeight) / 2);
+                lane.forEach(function(n, idx) {
+                    pos[n.id] = {
+                        x: baseX + rk * colGap,
+                        y: startY + idx * rowGap,
+                        w: CARD_W,
+                        h: CARD_H,
+                        lane: rk === 0 ? 'left' : (rk >= 3 ? 'right' : 'center'),
+                    };
+                });
+            });
 
-        xs = Object.values(pos).map(function(p) { return p.x; });
-        ys = Object.values(pos).map(function(p) { return p.y; });
-        minX = Math.min.apply(null, xs); maxX = Math.max.apply(null, xs);
-        minY = Math.min.apply(null, ys); maxY = Math.max.apply(null, ys);
-        graphW = maxX - minX; graphH = maxY - minY;
+            return {
+                w: keys.length ? ((keys[keys.length - 1] + 1) * colGap + CARD_W - colGap) : CARD_W,
+                h: clusterHeight,
+            };
+        }
 
-        var offsetX = (W - graphW) / 2 - minX;
-        var offsetY = (H - graphH) / 2 - minY;
-        Object.keys(pos).forEach(function(id) {
-            pos[id].x += offsetX;
-            pos[id].y += offsetY;
+        var baseX0 = 84;
+        var baseY0 = 72;
+
+        clusters.forEach(function(cluster, idx) {
+            var row = Math.floor(idx / clusterPerRow);
+            var col = idx % clusterPerRow;
+            var bx = baseX0 + col * (CARD_W + colGap * 4 + clusterGapX);
+            var by = baseY0 + row * (CARD_H + rowGap * 2 + clusterGapY);
+            layoutCluster(cluster, bx, by);
         });
 
         return pos;
     }
 
+    function aplicarVisaoInicial() {
+        var ids = Object.keys(_pos || {});
+        if (!ids.length) { _zoom = 1; _pan = { x: 0, y: 0 }; return; }
+
+        var minX = Number.POSITIVE_INFINITY;
+        var minY = Number.POSITIVE_INFINITY;
+        var maxX = Number.NEGATIVE_INFINITY;
+        var maxY = Number.NEGATIVE_INFINITY;
+
+        ids.forEach(function(id) {
+            var p = _pos[id];
+            if (!p) return;
+            minX = Math.min(minX, p.x);
+            minY = Math.min(minY, p.y);
+            maxX = Math.max(maxX, p.x + p.w);
+            maxY = Math.max(maxY, p.y + p.h);
+        });
+
+        var bw = Math.max(1, maxX - minX);
+        var bh = Math.max(1, maxY - minY);
+        var fitX = (_W - 120) / bw;
+        var fitY = (_H - 120) / bh;
+        var fit = Math.min(fitX, fitY);
+
+        // Mais afastado como referência visual solicitada
+        _zoom = Math.max(0.18, Math.min(0.85, fit * 0.88));
+
+        var cx = minX + bw / 2;
+        var cy = minY + bh / 2;
+        _pan.x = (_W / 2 - cx) * _zoom;
+        _pan.y = (_H / 2 - cy) * _zoom;
+    }
+
     // ── Eventos de mouse ──────────────────────────────────────────────────
     function bindEventos(canvas) {
         canvas.onmousedown = function(e) {
+            fecharMenuContexto();
             var pt = toPt(canvas, e);
             var id = hitTest(pt);
             if (id !== null) {
@@ -4051,8 +4182,21 @@ function mDesenharNet(id, ptRx, ptTx) {
         };
         canvas.onwheel = function(e) {
             e.preventDefault();
+            fecharMenuContexto();
             _zoom = Math.max(0.2, Math.min(4, _zoom * (e.deltaY > 0 ? 0.88 : 1.13)));
             desenhar(canvas);
+        };
+        canvas.oncontextmenu = function(e) {
+            e.preventDefault();
+            var pt = toPt(canvas, e);
+            var id = hitTest(pt);
+            if (!id) {
+                fecharMenuContexto();
+                return false;
+            }
+            _ctxNodeId = id;
+            abrirMenuContexto(canvas, e, id);
+            return false;
         };
         (new ResizeObserver(function() {
             _W = canvas.offsetWidth; _H = canvas.offsetHeight;
@@ -4062,6 +4206,104 @@ function mDesenharNet(id, ptRx, ptTx) {
         })).observe(canvas);
     }
 
+    function nomeDoRecurso(no) {
+        if (!no || !no.id) return '';
+        var p = String(no.id).indexOf(':');
+        if (p < 0) return no.label || '';
+        return String(no.id).slice(p + 1) || no.label || '';
+    }
+
+    function obterReplicaAtual(no) {
+        if (!no || !no.replicas) return '1';
+        var txt = String(no.replicas);
+        var m = txt.match(/^(\\d+)\\s*\\/\\s*(\\d+)$/);
+        if (m) return m[2];
+        var soNum = txt.match(/\\d+/);
+        return soNum ? soNum[0] : '1';
+    }
+
+    function abrirMenuContexto(canvas, e, id) {
+        var no = _nodes.find(function(n) { return n.id === id; });
+        if (!no) { fecharMenuContexto(); return; }
+
+        var menu = document.getElementById('topo-context-menu');
+        var title = document.getElementById('topo-context-title');
+        var b1 = document.getElementById('topo-ctx-action-1');
+        var b2 = document.getElementById('topo-ctx-action-2');
+
+        var tipo = String(no.tipo || '').toLowerCase();
+        var nome = nomeDoRecurso(no);
+        var ns = _namespaceTopo || 'default';
+
+        b1.style.display = 'none';
+        b2.style.display = 'none';
+        b1.onclick = null;
+        b2.onclick = null;
+
+        if (tipo === 'pod') {
+            title.textContent = 'Pod: ' + nome;
+            b1.textContent = 'Reiniciar pod';
+            b1.style.display = 'block';
+            b1.onclick = function() {
+                fecharMenuContexto();
+                vscode.postMessage({ command: 'k8sAcao', acao: 'pod-restart', nome: nome, namespace: ns });
+            };
+        } else if (tipo === 'deployment') {
+            title.textContent = 'Deployment: ' + nome;
+            b1.textContent = 'Escalar replicas';
+            b2.textContent = 'Rolling restart';
+            b1.style.display = 'block';
+            b2.style.display = 'block';
+            b1.onclick = function() {
+                fecharMenuContexto();
+                abrirModalEscala('depl-scale', nome, ns, obterReplicaAtual(no));
+            };
+            b2.onclick = function() {
+                fecharMenuContexto();
+                vscode.postMessage({ command: 'k8sAcao', acao: 'depl-restart', nome: nome, namespace: ns });
+            };
+        } else if (tipo === 'statefulset') {
+            title.textContent = 'StatefulSet: ' + nome;
+            b1.textContent = 'Escalar replicas';
+            b1.style.display = 'block';
+            b1.onclick = function() {
+                fecharMenuContexto();
+                abrirModalEscala('ss-scale', nome, ns, obterReplicaAtual(no));
+            };
+        } else {
+            fecharMenuContexto();
+            return;
+        }
+
+        var rect = canvas.getBoundingClientRect();
+        var x = e.clientX - rect.left;
+        var y = e.clientY - rect.top;
+
+        menu.style.display = 'block';
+        var mw = menu.offsetWidth || 220;
+        var mh = menu.offsetHeight || 120;
+        var maxX = Math.max(8, rect.width - mw - 8);
+        var maxY = Math.max(8, rect.height - mh - 8);
+        x = Math.max(8, Math.min(maxX, x));
+        y = Math.max(8, Math.min(maxY, y));
+        menu.style.left = x + 'px';
+        menu.style.top = y + 'px';
+    }
+
+    function fecharMenuContexto() {
+        _ctxNodeId = null;
+        var menu = document.getElementById('topo-context-menu');
+        if (menu) menu.style.display = 'none';
+    }
+
+    document.addEventListener('click', function(e) {
+        var alvo = e.target;
+        if (!alvo || !alvo.closest) return;
+        if (!alvo.closest('#topo-context-menu') && !alvo.closest('#topo-canvas')) {
+            fecharMenuContexto();
+        }
+    });
+
     function toPt(canvas, e) {
         var r = canvas.getBoundingClientRect();
         var mx = (e.clientX - r.left) / (r.width  / _W);
@@ -4069,13 +4311,15 @@ function mDesenharNet(id, ptRx, ptTx) {
         return { x: (mx - _W/2 - _pan.x) / _zoom + _W/2, y: (my - _H/2 - _pan.y) / _zoom + _H/2 };
     }
     function hitTest(pt) {
-        var best = null, bestD = HEX_R + 6;
+        var found = null;
         _nodes.forEach(function(n) {
-            var p = _pos[n.id]; if (!p) return;
-            var d = Math.sqrt((p.x - pt.x) * (p.x - pt.x) + (p.y - pt.y) * (p.y - pt.y));
-            if (d < bestD) { bestD = d; best = n.id; }
+            var p = _pos[n.id];
+            if (!p) return;
+            if (pt.x >= p.x && pt.x <= p.x + p.w && pt.y >= p.y && pt.y <= p.y + p.h) {
+                found = n.id;
+            }
         });
-        return best;
+        return found;
     }
     function atualizarTooltip(canvas, id, e) {
         var tt = document.getElementById('topo-tooltip');
@@ -4128,7 +4372,7 @@ function mDesenharNet(id, ptRx, ptTx) {
         // Nós (sobre as arestas)
         _nodes.forEach(function(node) {
             var p = _pos[node.id]; if (!p) return;
-            desenharHex(ctx, p.x, p.y, node, node.id === _hoverId);
+            desenharCard(ctx, p, node, node.id === _hoverId);
         });
 
         ctx.restore();
@@ -4136,125 +4380,131 @@ function mDesenharNet(id, ptRx, ptTx) {
     }
 
     function desenharAresta(ctx, edge) {
-        var fp = _pos[edge.from], tp = _pos[edge.to]; if (!fp || !tp) return;
-        var dx = tp.x - fp.x, dy = tp.y - fp.y;
-        var dist = Math.sqrt(dx * dx + dy * dy) || 1;
-        var ux = dx / dist, uy = dy / dist;
-        var sx = fp.x + ux * (HEX_R + 3), sy = fp.y + uy * (HEX_R + 3);
-        var ex = tp.x - ux * (HEX_R + 9), ey = tp.y - uy * (HEX_R + 9);
+        var fp = _pos[edge.from], tp = _pos[edge.to];
+        if (!fp || !tp) return;
+
+        var sx = fp.x + fp.w;
+        var sy = fp.y + fp.h / 2;
+        var ex = tp.x;
+        var ey = tp.y + tp.h / 2;
+
+        if (fp.x > tp.x) {
+            sx = fp.x;
+            ex = tp.x + tp.w;
+        }
+
+        var c1x = sx + (ex > sx ? 76 : -76);
+        var c2x = ex - (ex > sx ? 76 : -76);
+
+        var stroke = 'rgba(0,200,200,0.56)';
+        var lineW = 2.2;
+        var dashed = false;
+
+        if (tp.lane === 'center' && fp.lane === 'left') {
+            stroke = 'rgba(245,158,11,0.85)';
+            dashed = true;
+        } else if (tp.lane === 'right') {
+            stroke = 'rgba(52,211,153,0.88)';
+        } else if (fp.lane === 'right' && tp.lane === 'center') {
+            stroke = 'rgba(52,211,153,0.88)';
+        }
 
         ctx.save();
-        ctx.strokeStyle = 'rgba(0,200,200,0.40)';
-        ctx.lineWidth = 1.4;
-        ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.stroke();
-
-        // Seta preenchida
-        var hl = 9;
-        ctx.fillStyle = 'rgba(0,200,200,0.55)';
+        ctx.strokeStyle = stroke;
+        ctx.lineWidth = lineW;
+        if (dashed) ctx.setLineDash([5, 5]);
         ctx.beginPath();
-        ctx.moveTo(ex, ey);
-        ctx.lineTo(ex - ux * hl + uy * hl * 0.38, ey - uy * hl - ux * hl * 0.38);
-        ctx.lineTo(ex - ux * hl - uy * hl * 0.38, ey - uy * hl + ux * hl * 0.38);
-        ctx.closePath(); ctx.fill();
-
-        if (edge.label) {
-            var lx = (sx + ex) / 2, ly = (sy + ey) / 2;
-            ctx.font = '8px monospace';
-            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-            var labelText = edge.label.length > 14 ? edge.label.slice(0, 13) + '\u2026' : edge.label;
-            var metrics = ctx.measureText(labelText);
-            ctx.fillStyle = 'rgba(6,16,27,0.86)';
-            ctx.fillRect(lx - metrics.width / 2 - 5, ly - 7, metrics.width + 10, 14);
-            ctx.fillStyle = 'rgba(226,232,240,0.62)';
-            ctx.fillText(labelText, lx, ly);
-        }
+        ctx.moveTo(sx, sy);
+        ctx.bezierCurveTo(c1x, sy, c2x, ey, ex, ey);
+        ctx.stroke();
+        ctx.setLineDash([]);
         ctx.restore();
     }
 
-    function desenharHex(ctx, cx, cy, node, isHover) {
+    function desenharCard(ctx, p, node, isHover) {
         var cor  = COR[node.tipo]  || '#64748b';
         var fill = FILL[node.tipo] || 'rgba(100,116,139,0.10)';
 
         ctx.save();
 
-        // ── Hexágono flat-top ───────────────────────────────────────────
-        caminhoHex(ctx, cx, cy, HEX_R);
-        ctx.fillStyle = isHover ? toRgba(cor, 0.25) : fill;
+        // Card base
+        roundRect(ctx, p.x, p.y, p.w, p.h, 8);
+        ctx.fillStyle = isHover ? 'rgba(26,34,51,0.96)' : 'rgba(15,23,42,0.92)';
         ctx.fill();
-        ctx.strokeStyle = isHover ? cor : toRgba(cor, 0.65);
-        ctx.lineWidth   = isHover ? 2.2 : 1.6;
+        ctx.strokeStyle = isHover ? cor : toRgba(cor, 0.76);
+        ctx.lineWidth = isHover ? 2.4 : 1.8;
         ctx.stroke();
 
-        // ── Ícone de switch de rede ─────────────────────────────────────
-        desenharIconeSwitch(ctx, cx, cy, HEX_R * 0.44, cor);
+        // Faixa lateral
+        roundRect(ctx, p.x + 1, p.y + 1, 4, p.h - 2, 3);
+        ctx.fillStyle = cor;
+        ctx.fill();
 
-        // ── Badge de tipo (pequeno, dentro do hex) ──────────────────────
-        var badge = { ingress: 'ING', service: 'SVC', pod: 'POD', node: 'NODE', deployment: 'DEP', statefulset: 'STS', daemonset: 'DS' }[node.tipo] || '';
-        if (badge) {
-            ctx.font = badge.length > 3 ? 'bold 5.8px sans-serif' : 'bold 6.5px sans-serif';
-            ctx.fillStyle = toRgba(cor, 0.7);
-            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-            ctx.fillText(badge, cx, cy + HEX_R * 0.67);
-        }
+        // Header
+        ctx.font = 'bold 12px sans-serif';
+        ctx.fillStyle = '#e2e8f0';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        var title = node.label.length > 28 ? node.label.slice(0, 26) + '…' : node.label;
+        ctx.fillText(title, p.x + 12, p.y + 10);
 
-        // ── Rótulo abaixo do hexágono ────────────────────────────────────
-        var lbl = node.label.length > 24 ? node.label.slice(0, 22) + '\u2026' : node.label;
-        ctx.font = isHover ? 'bold 10.5px sans-serif' : '10px sans-serif';
-        ctx.fillStyle = isHover ? '#e2e8f0' : 'rgba(226,232,240,0.82)';
-        ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-        ctx.fillText(lbl, cx, cy + HEX_R + 6);
+        // Status dot + texto
+        var statusText = (node.status || 'unknown').toString();
+        var statusColor = statusCor(statusText);
+        ctx.beginPath();
+        ctx.fillStyle = statusColor;
+        ctx.arc(p.x + p.w - 14, p.y + 15, 4, 0, Math.PI * 2);
+        ctx.fill();
 
-        if (node.replicas) {
-            ctx.font = '9px monospace';
-            ctx.fillStyle = toRgba(cor, 0.72);
-            ctx.fillText(node.replicas, cx, cy + HEX_R + 19);
-        }
+        ctx.font = '10px monospace';
+        ctx.fillStyle = 'rgba(255,255,255,0.72)';
+        var tipoTxt = (node.tipo || '').toString();
+        ctx.fillText(tipoTxt, p.x + 12, p.y + 30);
+
+        var line1 = node.replicas ? ('Replicas: ' + node.replicas) : '';
+        var det = node.detalhes ? String(node.detalhes) : '';
+        var line2 = det.length > 34 ? det.slice(0, 32) + '…' : det;
+
+        ctx.fillStyle = 'rgba(255,255,255,0.60)';
+        ctx.fillText(line1 || ' ', p.x + 12, p.y + 50);
+        ctx.fillText(line2 || ' ', p.x + 12, p.y + 66);
+
+        // etiqueta de fundo sutil por tipo
+        roundRect(ctx, p.x + 10, p.y + p.h - 24, 72, 14, 4);
+        ctx.fillStyle = fill;
+        ctx.fill();
+        ctx.font = 'bold 9px monospace';
+        ctx.fillStyle = toRgba(cor, 0.92);
+        ctx.fillText(tipoTxt.toUpperCase().slice(0, 10), p.x + 15, p.y + p.h - 20);
 
         ctx.restore();
     }
 
-    // Hexágono flat-top (primeiro vértice à direita)
-    function caminhoHex(ctx, cx, cy, r) {
-        ctx.beginPath();
-        for (var i = 0; i < 6; i++) {
-            var a = (Math.PI / 3) * i;
-            var px = cx + r * Math.cos(a), py = cy + r * Math.sin(a);
-            i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+    function roundRect(ctx, x, y, w, h, r) {
+        if (ctx.roundRect) {
+            ctx.beginPath();
+            ctx.roundRect(x, y, w, h, r);
+            return;
         }
+        ctx.beginPath();
+        ctx.moveTo(x + r, y);
+        ctx.lineTo(x + w - r, y);
+        ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+        ctx.lineTo(x + w, y + h - r);
+        ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+        ctx.lineTo(x + r, y + h);
+        ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+        ctx.lineTo(x, y + r);
+        ctx.quadraticCurveTo(x, y, x + r, y);
         ctx.closePath();
     }
 
-    // Ícone de switch de rede: corpo retangular + 3 portas abaixo
-    function desenharIconeSwitch(ctx, cx, cy, r, cor) {
-        ctx.save();
-        ctx.strokeStyle = cor; ctx.fillStyle = cor; ctx.lineWidth = 1.1;
-
-        var bw = r * 1.9, bh = r * 0.52;
-        var bx = cx - bw / 2, by = cy - r * 0.65;
-
-        // Corpo do switch (retângulo arredondado)
-        ctx.beginPath();
-        if (ctx.roundRect) { ctx.roundRect(bx, by, bw, bh, 2); } else { ctx.rect(bx, by, bw, bh); }
-        ctx.stroke();
-
-        // 3 LEDs dentro do corpo
-        var dotS = r * 0.18;
-        for (var i = 0; i < 3; i++) {
-            var lx = bx + bw * (i + 0.5) / 3 - dotS / 2;
-            var ly = by + bh / 2 - dotS / 2;
-            ctx.fillRect(lx, ly, dotS, dotS);
-        }
-
-        // 3 linhas verticais descendo do corpo (portas)
-        var lineTop = by + bh, lineBot = cy + r * 0.65;
-        var portR = r * 0.115;
-        for (var j = 0; j < 3; j++) {
-            var px = bx + bw * (j + 0.5) / 3;
-            ctx.beginPath(); ctx.moveTo(px, lineTop); ctx.lineTo(px, lineBot); ctx.stroke();
-            // Círculo na extremidade (conector)
-            ctx.beginPath(); ctx.arc(px, lineBot, portR, 0, Math.PI * 2); ctx.fill();
-        }
-        ctx.restore();
+    function statusCor(status) {
+        var s = String(status || '').toLowerCase();
+        if (s.indexOf('run') >= 0 || s.indexOf('ready') >= 0 || s.indexOf('active') >= 0) return '#22c55e';
+        if (s.indexOf('pend') >= 0 || s.indexOf('start') >= 0 || s.indexOf('wait') >= 0) return '#f59e0b';
+        if (s.indexOf('fail') >= 0 || s.indexOf('error') >= 0 || s.indexOf('crash') >= 0) return '#ef4444';
+        return '#94a3b8';
     }
 
     function toRgba(hex, a) {

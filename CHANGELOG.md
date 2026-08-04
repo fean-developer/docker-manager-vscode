@@ -5,6 +5,54 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/).
 
 ---
 
+## [1.0.16] — 2026-08-04
+
+### Corrigido — Kubernetes
+- Corrigida a topologia ao trocar para um namespace sem recursos: o canvas agora é limpo imediatamente e não mantém os cards do namespace anterior.
+- A abertura/recarregamento da topologia agora limpa o desenho anterior antes da nova consulta, reduzindo a sensação de atraso visual entre namespaces.
+
+---
+
+## [1.0.15] — 2026-08-04
+
+### Corrigido — Kubernetes
+- Hotfix para tela principal em branco após o ajuste do menu de contexto da topologia.
+- Corrigido escape de regex dentro do script HTML do webview, que quebrava o JavaScript gerado no bundle.
+- Blindado o listener global do menu contextual para evitar erro ao receber eventos sem suporte a `closest()`.
+
+---
+
+## [1.0.14] — 2026-08-04
+
+### Adicionado — Kubernetes
+- Menu de contexto na topologia (clique direito no card do recurso) com ações por tipo de nó.
+- Pods: ação de **Reiniciar pod** diretamente pela topologia.
+- Deployments: ações de **Escalar réplicas** e **Rolling restart** diretamente pela topologia.
+- StatefulSets: ação de **Escalar réplicas** diretamente pela topologia.
+
+### Alterado — Kubernetes
+- Ações do menu contextual reutilizam os fluxos já existentes de confirmação e execução do backend (`k8sAcao`) para manter consistência com a aba de workloads.
+
+---
+
+## [1.0.13] — 2026-08-03
+
+### Alterado — Kubernetes
+- Topologia agora inicia com enquadramento automático e zoom inicial mais afastado, para abrir com visão geral próxima ao padrão visual solicitado.
+- Layout ajustado para separar recursos por clusters de `Node`, com alinhamento em colunas por tipo de recurso (Node, Pod, Workload, Service, Ingress).
+- Recursos sem `Node` associado continuam visíveis em clusters próprios para evitar sobreposição e perda de contexto.
+
+---
+
+## [1.0.12] — 2026-08-03
+
+### Alterado — Kubernetes
+- Topologia do Kubernetes redesenhada para formato visual em cards e colunas, inspirado no layout do vscode-docker-composer-studio.
+- Conexões curvas entre recursos com diferenciação visual por fluxo (entrada, núcleo e saída), mantendo fundo pontilhado e tema escuro.
+- Nós continuam arrastáveis e o painel mantém zoom/pan para navegação em clusters maiores.
+
+---
+
 ## [1.0.11] — 2026-08-03
 
 ### Corrigido — Kubernetes

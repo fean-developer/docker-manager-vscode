@@ -396,7 +396,6 @@ export function gerarHtmlWorkloads(
 <div class="k8s-toolbar">
   <span style="color:var(--muted);font-size:0.78em">Namespace:</span>
   <span style="font-family:var(--font-mono);font-size:0.82em;color:var(--cyan)">${esc(namespace)}</span>
-  <button class="k8s-btn" id="btn-topologia" style="margin-left:auto" title="Visualizar grafo de dependências de serviços">&#128200; Topologia</button>
 </div>
 
 <div class="k8s-section-titulo">Pods (${pods.length})</div>

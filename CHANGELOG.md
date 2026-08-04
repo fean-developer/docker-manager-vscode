@@ -5,6 +5,60 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/).
 
 ---
 
+## [1.0.8] — 2026-08-03
+
+### Alterado — Kubernetes
+- Enquadramento inicial da topologia ajustado para abrir mais afastado, exibindo a visão vertical completa com menos necessidade de pan ou zoom manual.
+
+---
+
+## [1.0.7] — 2026-08-03
+
+### Alterado — Kubernetes
+- Ordem vertical da topologia invertida para representar a visão solicitada: Node, Pod, Workload, Service e Ingress.
+- Setas do grafo ajustadas para apontar de cima para baixo nessa ordem arquitetural.
+
+---
+
+## [1.0.6] — 2026-08-03
+
+### Alterado — Kubernetes
+- Topologia alterada para orientação vertical, exibindo o fluxo arquitetural de cima para baixo: Ingress, Service, Workload, Pod e Node.
+
+---
+
+## [1.0.5] — 2026-08-03
+
+### Alterado — Kubernetes
+- Topologia reorganizada para fluxo arquitetural em colunas fixas: Ingress, Service, Workload, Pod e Node.
+- Relações alteradas para `Service -> Workload -> Pod -> Node`, evitando a leitura invertida `Service -> Pod -> Workload` e reduzindo sobreposição visual.
+
+---
+
+## [1.0.4] — 2026-08-03
+
+### Corrigido — Kubernetes
+- Corrigido erro de JavaScript no webview causado por trecho duplicado do layout antigo da topologia, que podia deixar a tela principal em branco ao carregar o painel.
+
+---
+
+## [1.0.3] — 2026-08-03
+
+### Alterado — Kubernetes
+- Botão **Topologia** movido para o cabeçalho principal do painel Kubernetes, ficando disponível junto dos seletores de cluster e namespace.
+- Layout inicial da topologia reorganizado em blocos compactos por componente conectado, com camadas fixas por tipo de recurso para reduzir a necessidade de arrastar ou navegar pelo canvas.
+
+---
+
+## [1.0.2] — 2026-08-03
+
+### Adicionado — Kubernetes
+- Topologia Kubernetes ampliada para mostrar relacionamentos arquiteturais entre Ingress, Services, Pods, Nodes, Deployments, StatefulSets e DaemonSets no namespace selecionado.
+- Arestas do grafo inferidas a partir de backends de Ingress, selectors de Service, `ownerReferences` dos Pods e agendamento dos Pods em Nodes.
+- Legenda, badges, tooltips e rótulos de conexões atualizados para diferenciar cada tipo de recurso e expor detalhes úteis como tipo de Service, status, réplicas e Node de execução.
+
+---
+
 ## [1.0.0] — 2026-06-16
 
 ### Adicionado — Kubernetes

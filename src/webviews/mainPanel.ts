@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import Dockerode from 'dockerode';
+import type * as k8s from '@kubernetes/client-node';
 import { ContainerService } from '../services/containerService';
 import { ImageService, ImageInfo } from '../services/imageService';
 import { VolumeService } from '../services/volumeService';
@@ -1125,9 +1126,9 @@ export class MainPanel {
     }
 
     /**
-     * Carrega o grafo de topologia de serviços do namespace ativo.
-     * Nós: Services, Deployments/StatefulSets, Ingresses (externos).
-     * Arestas inferidas de: label selectors (Service→workload) + env vars de containers.
+     * Carrega o grafo de topologia arquitetural do namespace ativo.
+     * Nós: Ingresses, Services, Pods, Nodes, Deployments, StatefulSets e DaemonSets.
+     * Arestas inferidas de: backends de Ingress, selectors de Service, ownerReferences e agendamento em Node.
      */
     private async _carregarTopologia(): Promise<void> {
         try {
@@ -1135,27 +1136,54 @@ export class MainPanel {
             const { KubernetesServiceService } = await import('../services/kubernetesServiceService');
             const { DeploymentService } = await import('../services/deploymentService');
             const { StatefulSetService } = await import('../services/statefulSetService');
+            const { DaemonSetService } = await import('../services/daemonSetService');
+            const { NodeService } = await import('../services/nodeService');
 
             const client = KubernetesClient.getInstance();
             const ns = client.getNamespaceAtivo();
             const coreApi = client.getCoreApi();
-            const appsApi = client.getAppsApi();
 
             // Busca dados em paralelo
-            const [rawPods, rawServices, deployments, statefulsets] = await Promise.all([
+            const [rawPods, rawServices, deployments, statefulsets, daemonsets, nodesCluster] = await Promise.all([
                 coreApi.listNamespacedPod({ namespace: ns }).then(r => r.items ?? []).catch(() => []),
                 new KubernetesServiceService().listar(ns).catch(() => []),
                 new DeploymentService().listar(ns).catch(() => []),
                 new StatefulSetService().listar(ns).catch(() => []),
+                new DaemonSetService().listar(ns).catch(() => []),
+                new NodeService().listar().catch(() => []),
             ]);
 
-            // Verifica se há Ingresses
-            let ingressNomes: string[] = [];
+            interface IngressTopologyInfo {
+                nome: string;
+                hosts: string[];
+                serviceBackends: string[];
+            }
+
+            // Verifica se há Ingresses e quais Services eles expõem.
+            let ingressInfos: IngressTopologyInfo[] = [];
             try {
                 const netApi = client.getKubeConfig().makeApiClient((await import('@kubernetes/client-node')).NetworkingV1Api);
-                const ingList = await (netApi as unknown as { listNamespacedIngress(p: { namespace: string }): Promise<{ items: Array<{ metadata?: { name?: string }; spec?: { rules?: Array<{ host?: string }> } }> }> })
+                const ingList = await (netApi as unknown as { listNamespacedIngress(p: { namespace: string }): Promise<{ items: k8s.V1Ingress[] }> })
                     .listNamespacedIngress({ namespace: ns });
-                ingressNomes = (ingList.items ?? []).map(i => i.metadata?.name ?? '').filter(Boolean);
+                ingressInfos = (ingList.items ?? []).map(ingress => {
+                    const hosts = (ingress.spec?.rules ?? [])
+                        .map(regra => regra.host ?? '')
+                        .filter(Boolean);
+                    const serviceBackends = new Set<string>();
+                    const defaultService = ingress.spec?.defaultBackend?.service?.name;
+                    if (defaultService) { serviceBackends.add(defaultService); }
+                    for (const regra of ingress.spec?.rules ?? []) {
+                        for (const pathInfo of regra.http?.paths ?? []) {
+                            const serviceName = pathInfo.backend.service?.name;
+                            if (serviceName) { serviceBackends.add(serviceName); }
+                        }
+                    }
+                    return {
+                        nome: ingress.metadata?.name ?? 'desconhecido',
+                        hosts,
+                        serviceBackends: [...serviceBackends],
+                    };
+                }).filter(ingress => ingress.nome !== 'desconhecido');
             } catch { /* Ingress não disponível */ }
 
             // ── Construção dos nós ───────────────────────────────────────────
@@ -1163,9 +1191,10 @@ export class MainPanel {
             interface TopoNode {
                 id: string;
                 label: string;
-                tipo: 'service' | 'deployment' | 'statefulset' | 'external' | 'ingress';
+                tipo: 'service' | 'deployment' | 'statefulset' | 'daemonset' | 'pod' | 'node' | 'external' | 'ingress';
                 status?: string;
                 replicas?: string;
+                detalhes?: string;
             }
             interface TopoEdge {
                 from: string;
@@ -1176,112 +1205,151 @@ export class MainPanel {
             const nodes: TopoNode[] = [];
             const edges: TopoEdge[] = [];
             const nodeIds = new Set<string>();
+            const rawServiceNames = new Set(rawServices.map(service => service.nome));
 
             const addNode = (n: TopoNode): void => {
                 if (!nodeIds.has(n.id)) { nodes.push(n); nodeIds.add(n.id); }
             };
             const addEdge = (from: string, to: string, label?: string): void => {
                 if (from !== to && nodeIds.has(from) && nodeIds.has(to)) {
-                    const dup = edges.some(e => e.from === from && e.to === to);
+                    const dup = edges.some(edge => edge.from === from && edge.to === to && edge.label === label);
                     if (!dup) edges.push({ from, to, label });
                 }
             };
 
+            const acharWorkloadDoPod = (pod: k8s.V1Pod): { id: string; kind: string; nome: string } | null => {
+                const owner = (pod.metadata?.ownerReferences ?? [])[0];
+                if (owner?.kind === 'ReplicaSet') {
+                    const deployment = deployments.find(item => owner.name?.startsWith(item.nome + '-'));
+                    return deployment ? { id: `depl:${deployment.nome}`, kind: 'Deployment', nome: deployment.nome } : null;
+                }
+                if (owner?.kind === 'StatefulSet' && owner.name) {
+                    return { id: `ss:${owner.name}`, kind: 'StatefulSet', nome: owner.name };
+                }
+                if (owner?.kind === 'DaemonSet' && owner.name) {
+                    return { id: `ds:${owner.name}`, kind: 'DaemonSet', nome: owner.name };
+                }
+                return null;
+            };
+
+            const podSelecionadoPorService = (pod: k8s.V1Pod, selector: Record<string, string>): boolean => {
+                const labelsPod = pod.metadata?.labels ?? {};
+                const entradasSelector = Object.entries(selector);
+                return entradasSelector.length > 0 && entradasSelector.every(([chave, valor]) => labelsPod[chave] === valor);
+            };
+
             // Services
             for (const svc of rawServices) {
-                addNode({ id: `svc:${svc.nome}`, label: svc.nome, tipo: 'service' });
+                const portas = svc.portas.map(porta => `${porta.porta}->${porta.targetPort}`).join(', ');
+                addNode({
+                    id: `svc:${svc.nome}`,
+                    label: svc.nome,
+                    tipo: 'service',
+                    status: svc.tipo,
+                    detalhes: `${svc.clusterIP || '-'} ${portas || ''}`.trim(),
+                });
             }
 
             // Deployments
-            for (const d of deployments) {
-                const status = d.replicasProntas >= d.replicasDesejadas && d.replicasDesejadas > 0 ? 'ready' : 'pending';
+            for (const deployment of deployments) {
+                const status = deployment.replicasProntas >= deployment.replicasDesejadas && deployment.replicasDesejadas > 0 ? 'ready' : 'pending';
                 addNode({
-                    id: `depl:${d.nome}`,
-                    label: d.nome,
+                    id: `depl:${deployment.nome}`,
+                    label: deployment.nome,
                     tipo: 'deployment',
                     status,
-                    replicas: `${d.replicasProntas}/${d.replicasDesejadas}`,
+                    replicas: `${deployment.replicasProntas}/${deployment.replicasDesejadas}`,
                 });
             }
 
             // StatefulSets
-            for (const ss of statefulsets) {
+            for (const statefulset of statefulsets) {
                 addNode({
-                    id: `ss:${ss.nome}`,
-                    label: ss.nome,
+                    id: `ss:${statefulset.nome}`,
+                    label: statefulset.nome,
                     tipo: 'statefulset',
-                    replicas: `${ss.replicasProntas}/${ss.replicasDesejadas}`,
+                    replicas: `${statefulset.replicasProntas}/${statefulset.replicasDesejadas}`,
                 });
             }
 
-            // Ingresses como nó externo
-            for (const ing of ingressNomes) {
-                addNode({ id: `ing:${ing}`, label: ing, tipo: 'ingress' });
+            // DaemonSets
+            for (const daemonset of daemonsets) {
+                addNode({
+                    id: `ds:${daemonset.nome}`,
+                    label: daemonset.nome,
+                    tipo: 'daemonset',
+                    replicas: `${daemonset.numberAvailable}/${daemonset.desiredNumberScheduled}`,
+                });
             }
 
-            // ── Arestas por label selector: Service → Workload ───────────────
-            // Um Service seleciona pods; rastreamos até o Deployment/SS dono
-            for (const svc of rawServices) {
-                if (Object.keys(svc.selector).length === 0) { continue; }
-                // Encontra pods que satisfazem o selector
-                const svcId = `svc:${svc.nome}`;
-                for (const pod of rawPods) {
-                    const podLabels = pod.metadata?.labels ?? {};
-                    const match = Object.entries(svc.selector).every(([k, v]) => podLabels[k] === v);
-                    if (!match) { continue; }
-                    // Sobe a cadeia: Pod → ReplicaSet/SS → Deployment/SS
-                    const owner = (pod.metadata?.ownerReferences ?? [])[0];
-                    if (owner?.kind === 'ReplicaSet') {
-                        // Encontra o Deployment dono do RS
-                        const rsOwnerName = owner.name;
-                        // O padrão do nome do RS é <depl>-<hash>, mas usamos a lista de deployments
-                        const depl = deployments.find(d => rsOwnerName.startsWith(d.nome + '-'));
-                        if (depl) {
-                            addEdge(svcId, `depl:${depl.nome}`);
-                            break; // Um service → um workload é suficiente
-                        }
-                    } else if (owner?.kind === 'StatefulSet') {
-                        addEdge(svcId, `ss:${owner.name}`);
-                        break;
-                    }
-                }
+            // Nodes usados pelos pods do namespace selecionado
+            const nodeNamesUsados = new Set(rawPods.map(pod => pod.spec?.nodeName ?? '').filter(Boolean));
+            for (const nodeInfo of nodesCluster.filter(nodeInfo => nodeNamesUsados.has(nodeInfo.nome))) {
+                addNode({
+                    id: `node:${nodeInfo.nome}`,
+                    label: nodeInfo.nome,
+                    tipo: 'node',
+                    status: nodeInfo.status,
+                    detalhes: `${nodeInfo.roles.join(', ')} | ${nodeInfo.cpu.capacidade} CPU | ${nodeInfo.memoria.capacidade}`,
+                });
             }
 
-            // ── Arestas por env vars: Workload → Service ─────────────────────
-            // K8s injeta automaticamente <SERVICE>_SERVICE_HOST para todos os services.
-            // Detectamos env vars definidas PELO USUÁRIO (não geradas pelo K8s) que
-            // referenciam nomes de serviços — heurística: value contém exatamente o nome do service.
-            const svcNomes = new Set(rawServices.map(s => s.nome));
-            const k8sAutoEnvPrefixes = new Set(rawServices.map(s => s.nome.toUpperCase().replace(/-/g, '_')));
-
+            // Pods reais do namespace
             for (const pod of rawPods) {
-                // Identifica workload dono do pod
-                const owner = (pod.metadata?.ownerReferences ?? [])[0];
-                let workloadId: string | null = null;
-                if (owner?.kind === 'ReplicaSet') {
-                    const depl = deployments.find(d => owner.name.startsWith(d.nome + '-'));
-                    if (depl) workloadId = `depl:${depl.nome}`;
-                } else if (owner?.kind === 'StatefulSet') {
-                    workloadId = `ss:${owner.name}`;
-                }
-                if (!workloadId) { continue; }
+                const podNome = pod.metadata?.name ?? 'desconhecido';
+                const nodeName = pod.spec?.nodeName ?? '';
+                const containerCount = pod.spec?.containers?.length ?? 0;
+                addNode({
+                    id: `pod:${podNome}`,
+                    label: podNome,
+                    tipo: 'pod',
+                    status: pod.status?.phase ?? 'Unknown',
+                    detalhes: nodeName ? `${containerCount} container(s) em ${nodeName}` : `${containerCount} container(s) sem node`,
+                });
+            }
 
-                for (const container of pod.spec?.containers ?? []) {
-                    for (const env of container.env ?? []) {
-                        const val = env.value ?? '';
-                        // Ignora env vars injetadas automaticamente pelo K8s
-                        const prefix = env.name.toUpperCase().replace(/-/g, '_');
-                        const isAutoInjected = [...k8sAutoEnvPrefixes].some(p =>
-                            prefix.startsWith(p + '_SERVICE_') || prefix.startsWith(p + '_PORT'),
-                        );
-                        if (isAutoInjected) { continue; }
-                        // Se o valor contém exatamente um nome de service → cria aresta
-                        for (const svcNome of svcNomes) {
-                            if (val === svcNome || val.includes(svcNome + '.') || val.includes(svcNome + ':')) {
-                                addEdge(workloadId, `svc:${svcNome}`, env.name);
-                            }
+            // Services expostos por Ingress
+            for (const ingress of ingressInfos) {
+                addNode({
+                    id: `ing:${ingress.nome}`,
+                    label: ingress.nome,
+                    tipo: 'ingress',
+                    detalhes: ingress.hosts.join(', ') || 'sem host',
+                });
+                for (const serviceName of ingress.serviceBackends) {
+                    if (rawServiceNames.has(serviceName)) {
+                        addEdge(`svc:${serviceName}`, `ing:${ingress.nome}`, 'backend');
+                    }
+                }
+            }
+
+            // Workload → Service por label selector; mostra qual workload alimenta cada Service.
+            for (const svc of rawServices) {
+                const serviceId = `svc:${svc.nome}`;
+                for (const pod of rawPods) {
+                    const podNome = pod.metadata?.name ?? 'desconhecido';
+                    if (podSelecionadoPorService(pod, svc.selector)) {
+                        const workload = acharWorkloadDoPod(pod);
+                        if (workload) {
+                            addEdge(workload.id, serviceId, 'selector');
+                        } else {
+                            addEdge(`pod:${podNome}`, serviceId, 'selector');
                         }
                     }
+                }
+            }
+
+            // Node → Pod → Workload owner
+            for (const pod of rawPods) {
+                const podNome = pod.metadata?.name ?? 'desconhecido';
+                const podId = `pod:${podNome}`;
+                const workload = acharWorkloadDoPod(pod);
+                if (workload) {
+                    addEdge(podId, workload.id, workload.kind);
+                }
+                const nodeName = pod.spec?.nodeName ?? '';
+                if (nodeName) {
+                    addEdge(`node:${nodeName}`, podId, 'scheduled');
                 }
             }
 
@@ -1900,6 +1968,7 @@ ${CSS_K8S}
                         <option value="default">default</option>
                     </select>
                 </div>
+                <button class="btn-refresh" id="btn-topologia" title="Abrir topologia arquitetural do namespace">&#128200; Topologia</button>
                 <button class="btn-refresh" id="k8s-refresh">&#8635; Atualizar</button>
             </div>
         </div>
@@ -2042,10 +2111,13 @@ ${CSS_K8S}
         <span id="topo-ns-label" style="font-size:0.78em;color:var(--muted);font-family:var(--font-mono)"></span>
         <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
             <span id="topo-legenda" style="font-size:0.72em;color:var(--muted);display:flex;gap:12px;align-items:center">
-                <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#00F7FF;vertical-align:middle;margin-right:4px"></span>Service</span>
-                <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#7C3AED;vertical-align:middle;margin-right:4px"></span>Deployment</span>
-                <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#00FF88;vertical-align:middle;margin-right:4px"></span>StatefulSet</span>
                 <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#f59e0b;vertical-align:middle;margin-right:4px"></span>Ingress</span>
+                <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#00d4d4;vertical-align:middle;margin-right:4px"></span>Service</span>
+                <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#38bdf8;vertical-align:middle;margin-right:4px"></span>Pod</span>
+                <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#94a3b8;vertical-align:middle;margin-right:4px"></span>Node</span>
+                <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#9333ea;vertical-align:middle;margin-right:4px"></span>Deployment</span>
+                <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#22c55e;vertical-align:middle;margin-right:4px"></span>StatefulSet</span>
+                <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#ef4444;vertical-align:middle;margin-right:4px"></span>DaemonSet</span>
             </span>
             <button id="topo-fechar" style="background:rgba(255,45,170,0.12);border:1px solid rgba(255,45,170,0.3);color:#FF2DAA;border-radius:6px;padding:4px 14px;cursor:pointer;font-size:0.82em">&#10005; Fechar</button>
         </div>
@@ -2056,8 +2128,8 @@ ${CSS_K8S}
         <div id="topo-loading" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:0.9em">Carregando topologia...</div>
         <div id="topo-vazio" style="display:none;position:absolute;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;gap:12px;color:var(--muted)">
             <div style="font-size:2em">&#128202;</div>
-            <div>Nenhuma depend\xEAncia encontrada neste namespace.</div>
-            <div style="font-size:0.8em">Tente outro namespace ou adicione env vars referenciando services.</div>
+            <div>Nenhum recurso relacionado encontrado neste namespace.</div>
+            <div style="font-size:0.8em">Selecione outro namespace ou atualize o cluster.</div>
         </div>
     </div>
 </div>
@@ -3503,8 +3575,8 @@ function mDesenharNet(id, ptRx, ptTx) {
     var _W = 0, _H = 0;
 
     // Paleta por tipo de nó
-    var COR  = { service:'#00d4d4', deployment:'#9333ea', statefulset:'#22c55e', ingress:'#f59e0b', external:'#64748b' };
-    var FILL = { service:'rgba(0,212,212,0.12)', deployment:'rgba(147,51,234,0.12)', statefulset:'rgba(34,197,94,0.12)', ingress:'rgba(245,158,11,0.12)', external:'rgba(100,116,139,0.10)' };
+    var COR  = { ingress:'#f59e0b', service:'#00d4d4', pod:'#38bdf8', node:'#94a3b8', deployment:'#9333ea', statefulset:'#22c55e', daemonset:'#ef4444', external:'#64748b' };
+    var FILL = { ingress:'rgba(245,158,11,0.12)', service:'rgba(0,212,212,0.12)', pod:'rgba(56,189,248,0.12)', node:'rgba(148,163,184,0.12)', deployment:'rgba(147,51,234,0.12)', statefulset:'rgba(34,197,94,0.12)', daemonset:'rgba(239,68,68,0.12)', external:'rgba(100,116,139,0.10)' };
 
     var HEX_R = 30;          // raio do hexágono
     var STEP_X = 200;        // espaçamento horizontal entre camadas
@@ -3551,88 +3623,112 @@ function mDesenharNet(id, ptRx, ptTx) {
         bindEventos(canvas);
     });
 
-    // ── Layout hierárquico (esquerda → direita) ───────────────────────────
+    // ── Layout arquitetural vertical em camadas fixas ──────────────────────
     function calcularLayout(nodes, edges, W, H) {
         if (!nodes.length) return {};
 
-        // Constrói listas de adjacência
-        var succ = {}, pred = {};
-        nodes.forEach(function(n) { succ[n.id] = []; pred[n.id] = []; });
+        var nodeById = {};
+        var pred = {};
+        nodes.forEach(function(n) { nodeById[n.id] = n; pred[n.id] = []; });
         edges.forEach(function(e) {
-            if (succ[e.from]) { if (succ[e.from].indexOf(e.to)   < 0) succ[e.from].push(e.to);   }
-            if (pred[e.to])   { if (pred[e.to].indexOf(e.from)   < 0) pred[e.to].push(e.from);   }
+            if (pred[e.to])   { if (pred[e.to].indexOf(e.from) < 0) pred[e.to].push(e.from); }
         });
 
-        // BFS: atribui camada a cada nó (a camada de um nó = máximo entre os predecessores + 1)
-        var layer = {};
-        var queue = [], qi = 0, visited = {};
-        nodes.forEach(function(n) {
-            if (!pred[n.id].length) { layer[n.id] = 0; queue.push(n.id); visited[n.id] = true; }
-        });
-        if (!queue.length) { layer[nodes[0].id] = 0; queue.push(nodes[0].id); visited[nodes[0].id] = true; }
-        while (qi < queue.length) {
-            var cur = queue[qi++];
-            succ[cur].forEach(function(nxt) {
-                var nl = (layer[cur] || 0) + 1;
-                if (layer[nxt] === undefined || layer[nxt] < nl) layer[nxt] = nl;
-                if (!visited[nxt]) { visited[nxt] = true; queue.push(nxt); }
-            });
-        }
-        nodes.forEach(function(n) { if (layer[n.id] === undefined) layer[n.id] = 0; });
-
-        // Agrupa por camada
-        var byLayer = [], maxL = 0;
-        nodes.forEach(function(n) {
-            var l = layer[n.id]; if (l > maxL) maxL = l;
-            if (!byLayer[l]) byLayer[l] = [];
-            byLayer[l].push(n.id);
-        });
-
-        // Minimiza cruzamentos: ordena cada camada pela posição média dos predecessores
-        var tempOrd = {};
-        nodes.forEach(function(n) { tempOrd[n.id] = 0; });
-        for (var l = 1; l <= maxL; l++) {
-            var col = byLayer[l] || [];
-            col.sort(function(a, b) {
-                var avgA = pred[a].length ? pred[a].reduce(function(s, p) { return s + (tempOrd[p] || 0); }, 0) / pred[a].length : 0;
-                var avgB = pred[b].length ? pred[b].reduce(function(s, p) { return s + (tempOrd[p] || 0); }, 0) / pred[b].length : 0;
-                return avgA - avgB;
-            });
-            col.forEach(function(id, i) { tempOrd[id] = i; });
+        function rankTipo(tipo) {
+            if (tipo === 'node') return 0;
+            if (tipo === 'pod') return 1;
+            if (tipo === 'deployment' || tipo === 'statefulset' || tipo === 'daemonset') return 2;
+            if (tipo === 'service') return 3;
+            if (tipo === 'ingress') return 4;
+            return 5;
         }
 
-        // Calcula coordenadas
-        var numCols = maxL + 1;
-        var maxRows = 0;
-        for (var l2 = 0; l2 <= maxL; l2++) maxRows = Math.max(maxRows, (byLayer[l2] || []).length);
+        function pesoTipo(tipo) {
+            if (tipo === 'node') return 0;
+            if (tipo === 'pod') return 1;
+            if (tipo === 'deployment') return 2;
+            if (tipo === 'statefulset') return 3;
+            if (tipo === 'daemonset') return 4;
+            if (tipo === 'service') return 5;
+            if (tipo === 'ingress') return 6;
+            return 7;
+        }
 
-        // Escala automática para caber na tela
-        var totalW = (numCols  - 1) * STEP_X;
-        var totalH = (maxRows  - 1) * STEP_Y;
-        var scaleX = totalW > 0 ? Math.min(1, (W - 120) / totalW) : 1;
-        var scaleY = totalH > 0 ? Math.min(1, (H - 100) / totalH) : 1;
-        var sc = Math.min(scaleX, scaleY, 1);
+        var byRank = {};
+        nodes.forEach(function(n) {
+            var rank = rankTipo(n.tipo);
+            if (!byRank[rank]) byRank[rank] = [];
+            byRank[rank].push(n.id);
+        });
 
-        var sX = STEP_X * sc, sY = STEP_Y * sc;
+        var activeRanks = Object.keys(byRank).map(function(v) { return Number(v); }).sort(function(a, b) { return a - b; });
+        var order = {};
+        activeRanks.forEach(function(rank, rankIndex) {
+            var column = byRank[rank];
+            column.sort(function(a, b) {
+                function predecessorAverage(id) {
+                    var predecessors = pred[id].filter(function(predId) { return order[predId] !== undefined; });
+                    if (!predecessors.length) return Number.MAX_SAFE_INTEGER;
+                    return predecessors.reduce(function(total, predId) { return total + order[predId]; }, 0) / predecessors.length;
+                }
+                var avgA = predecessorAverage(a);
+                var avgB = predecessorAverage(b);
+                if (avgA !== avgB) return avgA - avgB;
+                var tipoDiff = pesoTipo(nodeById[a].tipo) - pesoTipo(nodeById[b].tipo);
+                if (tipoDiff !== 0) return tipoDiff;
+                return nodeById[a].label.localeCompare(nodeById[b].label);
+            });
+            column.forEach(function(id, idx) { order[id] = rankIndex * 1000 + idx; });
+        });
 
+        var layerGap = 150;
+        var itemGap = 165;
+        var maxItemsPerLayer = activeRanks.reduce(function(max, rank) { return Math.max(max, byRank[rank].length); }, 1);
+        var rawW = Math.max(1, (maxItemsPerLayer - 1) * itemGap);
+        var rawH = Math.max(1, (activeRanks.length - 1) * layerGap);
+        var fit = Math.min(1, (W - 170) / rawW, (H - 150) / rawH);
+        fit = Math.max(0.50, fit);
+        var xGap = itemGap * fit;
+        var yGap = layerGap * fit;
         var pos = {};
-        for (var l3 = 0; l3 <= maxL; l3++) {
-            var col3 = byLayer[l3] || [];
-            var n3 = col3.length;
-            var colH = (n3 - 1) * sY;
-            col3.forEach(function(id, i) {
-                pos[id] = { x: l3 * sX, y: -colH / 2 + i * sY };
-            });
-        }
 
-        // Centraliza o grafo na tela
+        activeRanks.forEach(function(rank, layerIndex) {
+            var layer = byRank[rank];
+            var layerWidth = (layer.length - 1) * xGap;
+            layer.forEach(function(id, itemIndex) {
+                pos[id] = { x: -layerWidth / 2 + itemIndex * xGap, y: layerIndex * yGap };
+            });
+        });
+
+        if (!Object.keys(pos).length) return pos;
+
         var xs = Object.values(pos).map(function(p) { return p.x; });
         var ys = Object.values(pos).map(function(p) { return p.y; });
         var minX = Math.min.apply(null, xs), maxX = Math.max.apply(null, xs);
         var minY = Math.min.apply(null, ys), maxY = Math.max.apply(null, ys);
-        var gW = maxX - minX, gH = maxY - minY;
-        var ox = (W - gW) / 2 - minX, oy = (H - gH) / 2 - minY;
-        Object.keys(pos).forEach(function(id) { pos[id].x += ox; pos[id].y += oy; });
+        var graphW = Math.max(1, maxX - minX);
+        var graphH = Math.max(1, maxY - minY);
+        var fit = Math.min(1, (W - 150) / graphW, (H - 150) / graphH);
+        fit = Math.max(0.52, fit);
+
+        Object.keys(pos).forEach(function(id) {
+            pos[id].x = (pos[id].x - minX) * fit;
+            pos[id].y = (pos[id].y - minY) * fit;
+        });
+
+        xs = Object.values(pos).map(function(p) { return p.x; });
+        ys = Object.values(pos).map(function(p) { return p.y; });
+        minX = Math.min.apply(null, xs); maxX = Math.max.apply(null, xs);
+        minY = Math.min.apply(null, ys); maxY = Math.max.apply(null, ys);
+        graphW = maxX - minX; graphH = maxY - minY;
+
+        var offsetX = (W - graphW) / 2 - minX;
+        var offsetY = (H - graphH) / 2 - minY;
+        Object.keys(pos).forEach(function(id) {
+            pos[id].x += offsetX;
+            pos[id].y += offsetY;
+        });
+
         return pos;
     }
 
@@ -3709,6 +3805,7 @@ function mDesenharNet(id, ptRx, ptTx) {
         html += '<div style="color:rgba(255,255,255,0.5);font-size:0.88em">Tipo: ' + node.tipo + '</div>';
         if (node.replicas) html += '<div style="color:rgba(255,255,255,0.5);font-size:0.88em">R\u00e9plicas: ' + node.replicas + '</div>';
         if (node.status)   html += '<div style="color:rgba(255,255,255,0.5);font-size:0.88em">Status: ' + node.status + '</div>';
+        if (node.detalhes) html += '<div style="color:rgba(255,255,255,0.5);font-size:0.88em">Detalhes: ' + node.detalhes + '</div>';
         if (conns.length)  html += '<div style="color:rgba(255,255,255,0.35);font-size:0.82em;margin-top:4px">' + conns.length + ' conex\u00e3o(es)</div>';
         tt.innerHTML = html; tt.style.display = 'block';
         var rect = canvas.getBoundingClientRect();
@@ -3777,6 +3874,18 @@ function mDesenharNet(id, ptRx, ptTx) {
         ctx.lineTo(ex - ux * hl + uy * hl * 0.38, ey - uy * hl - ux * hl * 0.38);
         ctx.lineTo(ex - ux * hl - uy * hl * 0.38, ey - uy * hl + ux * hl * 0.38);
         ctx.closePath(); ctx.fill();
+
+        if (edge.label) {
+            var lx = (sx + ex) / 2, ly = (sy + ey) / 2;
+            ctx.font = '8px monospace';
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            var labelText = edge.label.length > 14 ? edge.label.slice(0, 13) + '\u2026' : edge.label;
+            var metrics = ctx.measureText(labelText);
+            ctx.fillStyle = 'rgba(6,16,27,0.86)';
+            ctx.fillRect(lx - metrics.width / 2 - 5, ly - 7, metrics.width + 10, 14);
+            ctx.fillStyle = 'rgba(226,232,240,0.62)';
+            ctx.fillText(labelText, lx, ly);
+        }
         ctx.restore();
     }
 
@@ -3798,9 +3907,9 @@ function mDesenharNet(id, ptRx, ptTx) {
         desenharIconeSwitch(ctx, cx, cy, HEX_R * 0.44, cor);
 
         // ── Badge de tipo (pequeno, dentro do hex) ──────────────────────
-        var badge = { service: 'SVC', deployment: 'DEP', statefulset: 'STS', ingress: 'ING' }[node.tipo] || '';
+        var badge = { ingress: 'ING', service: 'SVC', pod: 'POD', node: 'NODE', deployment: 'DEP', statefulset: 'STS', daemonset: 'DS' }[node.tipo] || '';
         if (badge) {
-            ctx.font = 'bold 6.5px sans-serif';
+            ctx.font = badge.length > 3 ? 'bold 5.8px sans-serif' : 'bold 6.5px sans-serif';
             ctx.fillStyle = toRgba(cor, 0.7);
             ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
             ctx.fillText(badge, cx, cy + HEX_R * 0.67);

@@ -5,6 +5,38 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/).
 
 ---
 
+## [1.0.11] — 2026-08-03
+
+### Corrigido — Kubernetes
+- Manifestos exibidos na sidebar agora são gerados como YAML válido usando o serializador do client Kubernetes.
+- Removido `metadata.managedFields` da visualização para evitar blocos ruidosos `f:...` e melhorar leitura.
+- Mantido mascaramento de `data` e `stringData` em Secrets antes de renderizar o YAML.
+
+---
+
+## [1.0.10] — 2026-08-03
+
+### Corrigido — Kubernetes
+- Hotfix para erro em runtime `ns is not defined` no painel Kubernetes, que podia exibir "Kubernetes não disponível" mesmo com cluster acessível.
+- Corrigido o bloco HTML de detalhe de PVC (Volumes) que estava com referência inválida de variável fora de escopo.
+
+---
+
+## [1.0.9] — 2026-08-03
+
+### Adicionado — Kubernetes
+- Tela de detalhe de Pod agora possui botão de **Shell** com a mesma ação já usada na lista de Pods.
+- Sidebar de **Manifest YAML** para recursos Kubernetes com abertura por clique no nome do recurso ou por botão de manifest nas ações rápidas.
+- Suporte de manifest para recursos exibidos no painel: Namespaces, Nodes, Pods, Deployments, StatefulSets, DaemonSets, Services, PVCs, ConfigMaps e Secrets.
+
+### Alterado — Kubernetes
+- Ícones/botões de ações da aba **Aplicações** ampliados para melhorar legibilidade e usabilidade.
+
+### Segurança — Kubernetes
+- Manifesto de Secret é exibido com `data` e `stringData` mascarados (`[oculto]`) no painel.
+
+---
+
 ## [1.0.8] — 2026-08-03
 
 ### Alterado — Kubernetes

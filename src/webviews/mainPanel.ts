@@ -26,6 +26,7 @@ interface MsgFromWebview {
     command: string;
     secao?: Secao;
     acao?: AcaoBulkContainer | string;
+    kind?: string;
     ids?: string[];
     id?: string;
     acaoRapida?: 'logs' | 'shell';
@@ -473,6 +474,12 @@ export class MainPanel {
                     if (msg.nome && msg.namespace) await this._carregarPodDetalhe(msg.nome, msg.namespace);
                     break;
 
+                case 'k8sManifest':
+                    if (msg.kind && msg.nome) {
+                        await this._carregarManifestoK8s(msg.kind, msg.nome, msg.namespace);
+                    }
+                    break;
+
                 case 'k8sTopologia':
                     await this._carregarTopologia();
                     break;
@@ -903,6 +910,115 @@ export class MainPanel {
         }
         if (spanAberto) { resultado += '</span>'; }
         return resultado;
+    }
+
+    private static _prepararManifestoK8s(recurso: unknown, mascararSecret: boolean): Record<string, unknown> {
+        const texto = JSON.stringify(recurso);
+        const objeto = JSON.parse(texto) as Record<string, unknown>;
+        const metadata = objeto['metadata'];
+
+        if (metadata && typeof metadata === 'object' && !Array.isArray(metadata)) {
+            delete (metadata as Record<string, unknown>)['managedFields'];
+        }
+
+        if (mascararSecret) {
+            for (const campo of ['data', 'stringData']) {
+                const dados = objeto[campo];
+                if (dados && typeof dados === 'object' && !Array.isArray(dados)) {
+                    objeto[campo] = Object.keys(dados as Record<string, unknown>).reduce<Record<string, string>>((acc, key) => {
+                        acc[key] = '[oculto]';
+                        return acc;
+                    }, {});
+                }
+            }
+        }
+
+        return objeto;
+    }
+
+    private async _carregarManifestoK8s(kind: string, nome: string, namespace?: string): Promise<void> {
+        try {
+            const { KubernetesClient } = await import('../kubernetes/kubernetesClient');
+            const client = KubernetesClient.getInstance();
+            const coreApi = client.getCoreApi();
+            const appsApi = client.getAppsApi();
+            const { dumpYaml } = await import('@kubernetes/client-node');
+
+            const kindNormalizado = kind.toLowerCase();
+            let recurso: unknown;
+            let titulo = `${kind} ${nome}`;
+
+            switch (kindNormalizado) {
+                case 'namespace':
+                    recurso = await coreApi.readNamespace({ name: nome });
+                    titulo = `Namespace ${nome}`;
+                    break;
+                case 'node':
+                    recurso = await coreApi.readNode({ name: nome });
+                    titulo = `Node ${nome}`;
+                    break;
+                case 'pod':
+                    if (!namespace) { throw new Error('Namespace obrigatório para Pod.'); }
+                    recurso = await coreApi.readNamespacedPod({ name: nome, namespace });
+                    titulo = `Pod ${namespace}/${nome}`;
+                    break;
+                case 'deployment':
+                    if (!namespace) { throw new Error('Namespace obrigatório para Deployment.'); }
+                    recurso = await appsApi.readNamespacedDeployment({ name: nome, namespace });
+                    titulo = `Deployment ${namespace}/${nome}`;
+                    break;
+                case 'statefulset':
+                    if (!namespace) { throw new Error('Namespace obrigatório para StatefulSet.'); }
+                    recurso = await appsApi.readNamespacedStatefulSet({ name: nome, namespace });
+                    titulo = `StatefulSet ${namespace}/${nome}`;
+                    break;
+                case 'daemonset':
+                    if (!namespace) { throw new Error('Namespace obrigatório para DaemonSet.'); }
+                    recurso = await appsApi.readNamespacedDaemonSet({ name: nome, namespace });
+                    titulo = `DaemonSet ${namespace}/${nome}`;
+                    break;
+                case 'service':
+                    if (!namespace) { throw new Error('Namespace obrigatório para Service.'); }
+                    recurso = await coreApi.readNamespacedService({ name: nome, namespace });
+                    titulo = `Service ${namespace}/${nome}`;
+                    break;
+                case 'pvc':
+                    if (!namespace) { throw new Error('Namespace obrigatório para PVC.'); }
+                    recurso = await coreApi.readNamespacedPersistentVolumeClaim({ name: nome, namespace });
+                    titulo = `PVC ${namespace}/${nome}`;
+                    break;
+                case 'configmap':
+                    if (!namespace) { throw new Error('Namespace obrigatório para ConfigMap.'); }
+                    recurso = await coreApi.readNamespacedConfigMap({ name: nome, namespace });
+                    titulo = `ConfigMap ${namespace}/${nome}`;
+                    break;
+                case 'secret':
+                    if (!namespace) { throw new Error('Namespace obrigatório para Secret.'); }
+                    recurso = await coreApi.readNamespacedSecret({ name: nome, namespace });
+                    titulo = `Secret ${namespace}/${nome}`;
+                    break;
+                default:
+                    throw new Error(`Tipo de recurso não suportado: ${kind}`);
+            }
+
+            const objeto = MainPanel._prepararManifestoK8s(recurso, kindNormalizado === 'secret');
+            const manifestYaml = dumpYaml(objeto, { noRefs: true, lineWidth: -1, sortKeys: false });
+            this._panel.webview.postMessage({
+                command: 'dadosK8sManifest',
+                data: {
+                    titulo,
+                    kind: kindNormalizado,
+                    nome,
+                    namespace: namespace ?? '',
+                    yaml: manifestYaml,
+                },
+            });
+        } catch (err) {
+            this._panel.webview.postMessage({
+                command: 'dadosK8sManifest',
+                erro: err instanceof Error ? err.message : String(err),
+            });
+        }
     }
 
     /**
@@ -1634,11 +1750,13 @@ canvas.chart { display: block; width: 100%; height: 130px; border-radius: 4px; b
 .k8s-tab-btn:hover { background: rgba(124,58,237,0.12); color: #A78BFA; border-color: rgba(124,58,237,0.3); }
 .k8s-tab-btn.ativo { background: rgba(124,58,237,0.18); border-color: rgba(124,58,237,0.5); color: #A78BFA; font-weight: 600; }
 /* Botões de ação rápida nas tabelas K8s */
-.k8s-qa-btn { background: transparent; color: var(--muted); border: 1px solid var(--borda); border-radius: 4px; padding: 3px 7px; cursor: pointer; font-size: 0.82em; transition: color 0.1s, border-color 0.1s; }
+.k8s-qa-btn { background: transparent; color: var(--muted); border: 1px solid var(--borda); border-radius: 4px; padding: 6px 10px; min-width: 30px; min-height: 30px; line-height: 1; cursor: pointer; font-size: 1.02em; transition: color 0.1s, border-color 0.1s; }
 .k8s-qa-btn:hover:not(:disabled) { color: #A78BFA; border-color: #7C3AED; }
 .k8s-qa-btn.k8s-qa-del:hover:not(:disabled) { color: var(--pink); border-color: var(--pink); }
 .k8s-qa-btn:disabled { opacity: 0.25; cursor: not-allowed; }
 .k8s-pod-link { cursor: pointer; color: #A78BFA; font-family: var(--font-mono); font-size: 0.88em; }
+.k8s-resource-link { cursor: pointer; color: #A78BFA; font-family: var(--font-mono); font-size: 0.88em; }
+.k8s-resource-link:hover { text-decoration: underline; color: #c4b5fd; }
 .vol-cnt-link {
     background: none; border: none; padding: 0; margin: 0;
     color: var(--accent); font-family: var(--font-mono); font-size: 0.82em;
@@ -1676,6 +1794,61 @@ canvas.chart { display: block; width: 100%; height: 130px; border-radius: 4px; b
 .k8s-logo-text { font-size: 0.68em; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: #7C3AED; font-family: var(--font-mono); line-height: 1.3; flex: 1; }
 .nav-group.fechado .nav-subitem { display: none; }
 .nav-group.fechado + .nav-divider { display: none; }
+.manifest-sidebar {
+    position: fixed;
+    top: 0;
+    right: 0;
+    width: min(52vw, 760px);
+    height: 100vh;
+    background: #0a1322;
+    border-left: 1px solid rgba(124,58,237,0.4);
+    box-shadow: -12px 0 28px rgba(0,0,0,0.45);
+    z-index: 10000;
+    display: none;
+    flex-direction: column;
+}
+.manifest-sidebar.aberta { display: flex; }
+.manifest-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+.manifest-title { font-size: 0.84em; color: var(--cyan); font-family: var(--font-mono); font-weight: 700; letter-spacing: 0.04em; }
+.manifest-subtitle { font-size: 0.76em; color: var(--muted); font-family: var(--font-mono); }
+.manifest-close {
+    margin-left: auto;
+    background: rgba(255,45,170,0.1);
+    color: var(--pink);
+    border: 1px solid rgba(255,45,170,0.35);
+    border-radius: 6px;
+    padding: 4px 10px;
+    cursor: pointer;
+    font-family: var(--font-mono);
+    font-size: 0.78em;
+}
+.manifest-close:hover { background: rgba(255,45,170,0.2); }
+.manifest-body {
+    flex: 1;
+    overflow: auto;
+    padding: 12px 16px 18px;
+}
+.manifest-content {
+    margin: 0;
+    white-space: pre;
+    font-size: 0.78em;
+    line-height: 1.5;
+    font-family: var(--font-mono);
+    color: #dbeafe;
+}
+.manifest-loading,
+.manifest-error {
+    color: var(--muted);
+    font-size: 0.84em;
+    font-family: var(--font-mono);
+}
+.manifest-error { color: var(--pink); }
 ${CSS_K8S}
 </style>
 </head>
@@ -2104,6 +2277,20 @@ ${CSS_K8S}
     </div>
 </div>
 
+<!-- ══ SIDEBAR MANIFEST YAML ═══════════════════════════════════ -->
+<aside id="manifest-sidebar" class="manifest-sidebar" aria-label="Manifest YAML">
+    <div class="manifest-header">
+        <div>
+            <div class="manifest-title" id="manifest-title">Manifest YAML</div>
+            <div class="manifest-subtitle" id="manifest-subtitle"></div>
+        </div>
+        <button id="manifest-close" class="manifest-close">&#10005; Fechar</button>
+    </div>
+    <div class="manifest-body" id="manifest-body">
+        <div class="manifest-loading">Selecione um recurso para ver o manifest.</div>
+    </div>
+</aside>
+
 <!-- ══ OVERLAY TOPOLOGIA ══════════════════════════════════════════ -->
 <div id="topo-overlay" style="display:none;position:fixed;inset:0;background:rgba(4,8,16,0.92);z-index:9998;flex-direction:column">
     <div style="display:flex;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid rgba(255,255,255,0.08);flex-shrink:0">
@@ -2145,6 +2332,7 @@ var podDetalheAtual = null;
 var podLogTabAtual = 'geral';
 var _podLogTimer = null;
 var _podLogAutoRefresh = false; // true durante ciclo de auto-refresh (evita flicker)
+var _manifestSidebarAberta = false;
 
 /* ── Utilitários ──────────────────────────────────────────────────────── */
 function esc(s) {
@@ -2158,11 +2346,54 @@ function fmt(bytes) {
     return (bytes/1073741824).toFixed(2) + ' GB';
 }
 
+function abrirSidebarManifestLoading(titulo, subtitulo) {
+    var sidebar = document.getElementById('manifest-sidebar');
+    var titleEl = document.getElementById('manifest-title');
+    var subEl = document.getElementById('manifest-subtitle');
+    var bodyEl = document.getElementById('manifest-body');
+    if (!sidebar || !titleEl || !subEl || !bodyEl) return;
+    titleEl.textContent = titulo || 'Manifest YAML';
+    subEl.textContent = subtitulo || '';
+    bodyEl.innerHTML = '<div class="manifest-loading">Carregando manifest...</div>';
+    sidebar.classList.add('aberta');
+    _manifestSidebarAberta = true;
+}
+
+function atualizarSidebarManifest(msg) {
+    var sidebar = document.getElementById('manifest-sidebar');
+    var titleEl = document.getElementById('manifest-title');
+    var subEl = document.getElementById('manifest-subtitle');
+    var bodyEl = document.getElementById('manifest-body');
+    if (!sidebar || !titleEl || !subEl || !bodyEl) return;
+
+    if (msg.erro) {
+        bodyEl.innerHTML = '<div class="manifest-error">Erro ao carregar manifest: ' + esc(msg.erro) + '</div>';
+        sidebar.classList.add('aberta');
+        _manifestSidebarAberta = true;
+        return;
+    }
+
+    var d = msg.data || {};
+    titleEl.textContent = d.titulo || 'Manifest YAML';
+    subEl.textContent = (d.kind || '') + (d.namespace ? ' | ns: ' + d.namespace : '');
+    bodyEl.innerHTML = '<pre class="manifest-content">' + esc(d.yaml || '') + '</pre>';
+    sidebar.classList.add('aberta');
+    _manifestSidebarAberta = true;
+}
+
+function fecharSidebarManifest() {
+    var sidebar = document.getElementById('manifest-sidebar');
+    if (!sidebar) return;
+    sidebar.classList.remove('aberta');
+    _manifestSidebarAberta = false;
+}
+
 /* ── Navegação ────────────────────────────────────────────────────────── */
 function navegar(secao) {
     if (secaoAtual === secao) return;
     if (secaoAtual === 'detail') { pararMonitor(); pararAutoRefreshLogs(); }
     if (secaoAtual === 'pod-detail') { pararAutoRefreshPodLogs(); }
+    if (_manifestSidebarAberta && secao !== 'kubernetes' && secao !== 'pod-detail') { fecharSidebarManifest(); }
     secaoAtual = secao;
 
     document.querySelectorAll('.secao').forEach(function(s) { s.classList.remove('ativa'); });
@@ -2362,6 +2593,9 @@ window.addEventListener('message', function(event) {
             _podLogAutoRefresh = false;
             break;
         }
+        case 'dadosK8sManifest':
+            atualizarSidebarManifest(msg);
+            break;
     }
 });
 
@@ -2400,6 +2634,14 @@ function renderPodDetalhe(d) {
     var badgeCor = d.status === 'Running' ? 'var(--verde)' : d.status === 'Pending' ? 'var(--yellow)' : 'var(--pink)';
     document.getElementById('pd-status-badge').innerHTML =
         '<span style="background:' + badgeCor + ';color:#fff;padding:2px 8px;border-radius:4px;font-size:0.8em">' + esc(d.status) + '</span>';
+
+    var pdActions = document.getElementById('pd-actions');
+    if (pdActions) {
+        var shellDisabled = d.status !== 'Running' ? 'disabled' : '';
+        pdActions.innerHTML =
+            '<button class="btn-detail-action" data-pd-acao="pod-shell" ' + shellDisabled + '>Shell</button>' +
+            '<button class="btn-detail-action" data-pd-acao="pod-manifest">&#128196; Manifest</button>';
+    }
 
     // Aba Geral
     var gi = document.getElementById('pd-geral-info');
@@ -2461,6 +2703,20 @@ document.getElementById('pd-tabs-nav').addEventListener('click', function(e) {
     if (panel) panel.classList.add('ativo');
     podLogTabAtual = tab;
     if (tab === 'logs' && podDetalheAtual) { carregarPodLogs(false); }
+});
+
+document.getElementById('pd-actions').addEventListener('click', function(e) {
+    var btn = e.target.closest('[data-pd-acao]');
+    if (!btn || !podDetalheAtual) return;
+    var acao = btn.getAttribute('data-pd-acao');
+    if (acao === 'pod-shell') {
+        vscode.postMessage({ command: 'k8sAcao', acao: 'pod-shell', nome: podDetalheAtual.nome, namespace: podDetalheAtual.namespace });
+        return;
+    }
+    if (acao === 'pod-manifest') {
+        abrirSidebarManifestLoading('Manifest YAML', 'pod | ns: ' + podDetalheAtual.namespace);
+        vscode.postMessage({ command: 'k8sManifest', kind: 'pod', nome: podDetalheAtual.nome, namespace: podDetalheAtual.namespace });
+    }
 });
 
 // Botão atualizar logs do pod (load manual — mostra indicador)
@@ -2618,6 +2874,16 @@ document.getElementById('k8s-body').addEventListener('click', function(e) {
         var acao = qaBtn.getAttribute('data-acao');
         var nome = qaBtn.getAttribute('data-nome');
         var ns   = qaBtn.getAttribute('data-ns');
+        var manifestKinds = {
+            'pod-manifest': 'pod',
+            'depl-manifest': 'deployment',
+            'ss-manifest': 'statefulset'
+        };
+        if (manifestKinds[acao]) {
+            abrirSidebarManifestLoading('Manifest YAML', manifestKinds[acao] + (ns ? ' | ns: ' + ns : ''));
+            vscode.postMessage({ command: 'k8sManifest', kind: manifestKinds[acao], nome: nome, namespace: ns });
+            return;
+        }
         if (acao === 'depl-scale' || acao === 'ss-scale') {
             var cur = qaBtn.getAttribute('data-replicas') || '1';
             abrirModalEscala(acao, nome, ns, cur);
@@ -2664,7 +2930,23 @@ document.getElementById('k8s-body').addEventListener('click', function(e) {
         navegar('pod-detail');
         vscode.postMessage({ command: 'k8sAbrirPod', nome: podNome, namespace: podNs });
         vscode.postMessage({ command: 'iniciarMonitoramentoPod', nome: podNome, namespace: podNs });
+        return;
     }
+    // Clicar no nome de qualquer recurso abre manifest YAML na sidebar
+    var resourceLink = e.target.closest('.k8s-resource-link');
+    if (resourceLink) {
+        var kind = resourceLink.getAttribute('data-kind');
+        var nomeResource = resourceLink.getAttribute('data-nome');
+        var nsResource = resourceLink.getAttribute('data-ns');
+        if (kind && nomeResource) {
+            abrirSidebarManifestLoading('Manifest YAML', kind + (nsResource ? ' | ns: ' + nsResource : ''));
+            vscode.postMessage({ command: 'k8sManifest', kind: kind, nome: nomeResource, namespace: nsResource || undefined });
+        }
+    }
+});
+
+document.getElementById('manifest-close').addEventListener('click', function() {
+    fecharSidebarManifest();
 });
 
 /* ══ DASHBOARD ═══════════════════════════════════════════════════════════ */

@@ -55,6 +55,11 @@ function linhaVazia(cols: number, msg: string): string {
     return `<tr><td colspan="${cols}" style="color:var(--muted);text-align:center;padding:18px">${esc(msg)}</td></tr>`;
 }
 
+function linkManifesto(nome: string, kind: string, namespace?: string): string {
+  const nsAttr = namespace ? ` data-ns="${esc(namespace)}"` : '';
+  return `<span class="k8s-resource-link" data-kind="${esc(kind)}" data-nome="${esc(nome)}"${nsAttr} title="Abrir manifest YAML">${esc(nome)}</span>`;
+}
+
 // ── Estilos compartilhados K8s (injetados uma vez junto com o HTML) ───────────
 
 export const CSS_K8S = /* css */`
@@ -200,7 +205,7 @@ export function gerarHtmlClusterOverview(
         ? linhaVazia(6, 'Nenhum nó encontrado.')
         : nodes.map(n => `
 <tr>
-  <td title="${esc(n.nome)}">${esc(n.nome)}</td>
+  <td title="${esc(n.nome)}">${linkManifesto(n.nome, 'node')}</td>
   <td>${badgeStatus(n.status)}</td>
   <td>${esc(n.roles.join(', '))}</td>
   <td>${esc(n.versao)}</td>
@@ -212,7 +217,7 @@ export function gerarHtmlClusterOverview(
         ? linhaVazia(2, 'Nenhum namespace encontrado.')
         : namespaces.map(ns => `
 <tr>
-  <td title="${esc(ns.nome)}">${esc(ns.nome)}</td>
+  <td title="${esc(ns.nome)}">${linkManifesto(ns.nome, 'namespace')}</td>
   <td>${badgeStatus(ns.status)}</td>
 </tr>`).join('');
 
@@ -338,6 +343,7 @@ export function gerarHtmlWorkloads(
   <td>${esc(p.nodeName ?? '-')}</td>
   <td>
     <div style="display:flex;gap:4px">
+      <button class="k8s-qa-btn" data-acao="pod-manifest" data-nome="${esc(p.nome)}" data-ns="${esc(p.namespace)}" title="Manifest YAML">&#128196;</button>
       <button class="k8s-qa-btn" data-acao="pod-shell"  data-nome="${esc(p.nome)}" data-ns="${esc(p.namespace)}" title="Shell" ${p.status !== 'Running' ? 'disabled' : ''}>&#9166;</button>
       <button class="k8s-qa-btn k8s-qa-del" data-acao="pod-delete" data-nome="${esc(p.nome)}" data-ns="${esc(p.namespace)}" title="Deletar">&#128465;</button>
     </div>
@@ -351,13 +357,14 @@ export function gerarHtmlWorkloads(
             const statusTxt = `${d.replicasProntas}/${d.replicasDesejadas}`;
             return `
 <tr>
-  <td title="${esc(d.nome)}">${esc(d.nome)}</td>
+  <td title="${esc(d.nome)}">${linkManifesto(d.nome, 'deployment', d.namespace)}</td>
   <td>${esc(d.namespace)}</td>
   <td>${badgeStatus(ok ? 'ready' : 'pending')}</td>
   <td>${esc(statusTxt)}</td>
   <td title="${esc(d.imagens.join(', '))}" style="color:var(--muted);font-size:0.78em">${esc(d.imagens[0] ?? '-')}</td>
   <td>
     <div style="display:flex;gap:4px">
+      <button class="k8s-qa-btn" data-acao="depl-manifest" data-nome="${esc(d.nome)}" data-ns="${esc(d.namespace)}" title="Manifest YAML">&#128196;</button>
       <button class="k8s-qa-btn" data-acao="depl-scale"   data-nome="${esc(d.nome)}" data-ns="${esc(d.namespace)}" data-replicas="${d.replicasDesejadas}" title="Escalar">&#9651;</button>
       <button class="k8s-qa-btn" data-acao="depl-restart" data-nome="${esc(d.nome)}" data-ns="${esc(d.namespace)}" title="Reiniciar">&#8635;</button>
       <button class="k8s-qa-btn k8s-qa-del" data-acao="depl-delete" data-nome="${esc(d.nome)}" data-ns="${esc(d.namespace)}" title="Deletar">&#128465;</button>
@@ -370,12 +377,13 @@ export function gerarHtmlWorkloads(
         ? linhaVazia(5, 'Nenhum StatefulSet encontrado.')
         : statefulsets.map(ss => `
 <tr>
-  <td title="${esc(ss.nome)}">${esc(ss.nome)}</td>
+  <td title="${esc(ss.nome)}">${linkManifesto(ss.nome, 'statefulset', ss.namespace)}</td>
   <td>${esc(ss.namespace)}</td>
   <td>${ss.replicasProntas}/${ss.replicasDesejadas}</td>
   <td title="${esc(ss.imagens.join(', '))}" style="color:var(--muted);font-size:0.78em">${esc(ss.imagens[0] ?? '-')}</td>
   <td>
     <div style="display:flex;gap:4px">
+      <button class="k8s-qa-btn" data-acao="ss-manifest" data-nome="${esc(ss.nome)}" data-ns="${esc(ss.namespace)}" title="Manifest YAML">&#128196;</button>
       <button class="k8s-qa-btn" data-acao="ss-scale"  data-nome="${esc(ss.nome)}" data-ns="${esc(ss.namespace)}" data-replicas="${ss.replicasDesejadas}" title="Escalar">&#9651;</button>
       <button class="k8s-qa-btn k8s-qa-del" data-acao="ss-delete" data-nome="${esc(ss.nome)}" data-ns="${esc(ss.namespace)}" title="Deletar">&#128465;</button>
     </div>
@@ -386,7 +394,7 @@ export function gerarHtmlWorkloads(
         ? linhaVazia(4, 'Nenhum DaemonSet encontrado.')
         : daemonsets.map(ds => `
 <tr>
-  <td title="${esc(ds.nome)}">${esc(ds.nome)}</td>
+  <td title="${esc(ds.nome)}">${linkManifesto(ds.nome, 'daemonset', ds.namespace)}</td>
   <td>${esc(ds.namespace)}</td>
   <td>${ds.numberAvailable}/${ds.desiredNumberScheduled}</td>
   <td title="${esc(ds.imagens.join(', '))}" style="color:var(--muted);font-size:0.78em">${esc(ds.imagens[0] ?? '-')}</td>
@@ -465,7 +473,7 @@ export function gerarHtmlNetworking(
             const portas = s.portas.map(p => `${p.porta}${p.protocolo !== 'TCP' ? `/${p.protocolo}` : ''}${p.nodePort ? `:${p.nodePort}` : ''}`).join(', ');
             return `
 <tr>
-  <td title="${esc(s.nome)}">${esc(s.nome)}</td>
+  <td title="${esc(s.nome)}">${linkManifesto(s.nome, 'service', s.namespace)}</td>
   <td>${esc(s.namespace)}</td>
   <td>${esc(s.tipo)}</td>
   <td>${esc(s.clusterIP)}</td>
@@ -529,7 +537,7 @@ export function gerarHtmlStorage(
         return /* html */`
 <tr class="k8s-vol-row" data-idx="${idx}">
   <td class="k8s-vol-chevron-cell"><span class="k8s-vol-chevron">&#9658;</span></td>
-  <td class="k8s-vol-name" title="${esc(p.nome)}">${esc(p.nome)}</td>
+  <td class="k8s-vol-name" title="${esc(p.nome)}">${linkManifesto(p.nome, 'pvc', p.namespace)}</td>
   <td style="color:var(--muted);font-size:0.82em;font-family:var(--font-mono)">${esc(p.namespace)}</td>
   <td><span class="k8s-vol-status-badge" style="background:${corBg};color:${cor}">${esc(p.status)}</span></td>
   <td><div class="k8s-vol-cap"><span class="k8s-vol-cap-valor">${esc(p.capacidade || '-')}</span></div></td>
@@ -602,7 +610,7 @@ export function gerarHtmlNamespaces(namespaces: NamespaceInfo[]): string {
             const criado = ns.criado ? new Date(ns.criado).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '-';
             return `
 <tr>
-  <td title="${esc(ns.nome)}" style="font-family:var(--font-mono)">${esc(ns.nome)}</td>
+  <td title="${esc(ns.nome)}" style="font-family:var(--font-mono)">${linkManifesto(ns.nome, 'namespace')}</td>
   <td>${badgeStatus(ns.status)}</td>
   <td style="color:var(--muted);font-size:0.82em">${criado}</td>
 </tr>`;
@@ -628,7 +636,7 @@ export function gerarHtmlNodes(nodes: NodeInfo[]): string {
             const criado = n.criado ? new Date(n.criado).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '-';
             return `
 <tr>
-  <td title="${esc(n.nome)}" style="font-family:var(--font-mono)">${esc(n.nome)}</td>
+  <td title="${esc(n.nome)}" style="font-family:var(--font-mono)">${linkManifesto(n.nome, 'node')}</td>
   <td>${badgeStatus(n.status)}</td>
   <td style="color:var(--muted);font-size:0.82em">${esc(n.roles.join(', '))}</td>
   <td style="font-family:var(--font-mono);font-size:0.82em">${esc(n.versao)}</td>
@@ -666,7 +674,7 @@ export function gerarHtmlConfig(
         ? linhaVazia(3, 'Nenhum ConfigMap encontrado.')
         : configmaps.map(cm => `
 <tr>
-  <td title="${esc(cm.nome)}">${esc(cm.nome)}</td>
+  <td title="${esc(cm.nome)}">${linkManifesto(cm.nome, 'configmap', cm.namespace)}</td>
   <td>${esc(cm.namespace)}</td>
   <td style="color:var(--muted)">${cm.chaves.length} chave(s)</td>
 </tr>`).join('');
@@ -675,7 +683,7 @@ export function gerarHtmlConfig(
         ? linhaVazia(4, 'Nenhum secret encontrado.')
         : secrets.map(s => `
 <tr>
-  <td title="${esc(s.nome)}">${esc(s.nome)}</td>
+  <td title="${esc(s.nome)}">${linkManifesto(s.nome, 'secret', s.namespace)}</td>
   <td>${esc(s.namespace)}</td>
   <td style="color:var(--muted);font-size:0.78em">${esc(s.tipo)}</td>
   <td style="color:var(--muted)">${s.numeroCHaves} chave(s) <span style="color:var(--parado)">[valores ocultos]</span></td>
